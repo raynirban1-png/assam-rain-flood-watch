@@ -35,6 +35,16 @@ Single `index.html` — open it and it works. No build step, no server code.
 - River section keeps working even if the weather API is unreachable (partial-failure mode)
 - Auto-refresh: data every 10 min, radar every 5 min, and whenever the tab regains focus
 
+## Install as an app (PWA)
+
+- **Android (Chrome)** — open the site and tap **Install** on the in-page banner
+  (or Chrome menu → *Install app* / *Add to Home screen*). Runs full-screen, offline-tolerant.
+- **iPhone/iPad (Safari)** — tap **Share** → **Add to Home Screen**. iOS shows no automatic
+  prompt; the in-page banner explains this. Launches standalone via the apple-touch-icon.
+
+The service worker caches the app shell and last-known data, so the app opens and shows
+saved numbers even with no connectivity, then refreshes when the network returns.
+
 ## Deploy (GitHub Pages)
 
 Already enabled on this repo: **Settings → Pages → Deploy from branch `main` / (root)**.
