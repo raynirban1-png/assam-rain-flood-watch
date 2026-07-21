@@ -6,7 +6,7 @@
      keeps its own localStorage cache, so data paints even fully offline)
    - Everything else static (fonts, Leaflet, map/radar tiles): stale-while-revalidate
 */
-var VERSION = 'arfw-v1';
+var VERSION = 'arfw-v2';  // bump on every deploy so installed clients refresh the cached app shell
 var SHELL_CACHE = VERSION + '-shell';
 var RUNTIME_CACHE = VERSION + '-runtime';
 var DATA_CACHE = VERSION + '-data';
