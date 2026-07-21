@@ -1295,7 +1295,7 @@ function renderPublicDangerChart(loc){
   var discPeakIdx = null;
   if(loc.peakFcstDisc){ var pi = dates.indexOf(loc.peakFcstDisc.date); if(pi >= 0) discPeakIdx = pi; }
   if(rainPeakIdx != null && rainPeakVal > 1) s += '<text x="'+X(rainPeakIdx).toFixed(1)+'" y="'+(T+6)+'" text-anchor="middle" font-size="7" fill="#3F7FB5" font-family="JetBrains Mono">RAIN PEAK</text>';
-  if(discPeakIdx != null) s += '<text x="'+X(discPeakIdx).toFixed(1)+'" y="'+(T+(discPeakIdx===rainPeakIdx?14:6))+'" text-anchor="middle" font-size="7" fill="#8e2738" font-family="JetBrains Mono">RIVER PEAK</text>';
+  if(discPeakIdx != null){ var stack = (rainPeakIdx != null && rainPeakVal > 1 && Math.abs(discPeakIdx - rainPeakIdx) <= 2); s += '<text x="'+X(discPeakIdx).toFixed(1)+'" y="'+(T+(stack?14:6))+'" text-anchor="middle" font-size="7" fill="#8e2738" font-family="JetBrains Mono">RIVER PEAK</text>'; }
 
   // today marker + labels
   s += '<line x1="'+X(5).toFixed(1)+'" y1="'+T+'" x2="'+X(5).toFixed(1)+'" y2="'+(T+plotH)+'" stroke="rgba(18,38,46,.4)" stroke-dasharray="3 3"/>';
