@@ -1,0 +1,1404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Assam Rain &amp; Flood Watch — Live</title>
+<meta name="description" content="Live rain, river discharge and radar for the Brahmaputra basin, Assam. Tap a location for river-vs-rain detail and danger level. Auto-refreshes every 10 minutes.">
+<meta name="theme-color" content="#0E2A3D">
+<meta property="og:title" content="Assam Rain &amp; Flood Watch — Live">
+<meta property="og:description" content="Live rain, river discharge and radar for the Brahmaputra basin. Tap a location for river-vs-rain detail and danger level.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%231E6E7A' d='M16 2C16 2 5 15.4 5 22a11 11 0 0 0 22 0C27 15.4 16 2 16 2z'/%3E%3Cpath fill='%2358A0AA' d='M12 22a4 4 0 0 0 8 0c0-2-4-6.5-4-6.5S12 20 12 22z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  :root{
+    --deep-water:#0E2A3D;
+    --deep-water-2:#123449;
+    --mist:#EEF3F1;
+    --paper:#FBFDFC;
+    --ink:#12262E;
+    --ink-soft:#4C6470;
+    --river-teal:#1E6E7A;
+    --river-teal-light:#58A0AA;
+    --rain-blue:#3F7FB5;
+    --line:rgba(18,38,46,0.12);
+    --line-strong:rgba(18,38,46,0.22);
+    --gauge-normal:#2F8F5B;
+    --gauge-watch:#C99A2E;
+    --gauge-warning:#C1591C;
+    --gauge-severe:#B23345;
+    --radius:5px;
+    --shadow:0 1px 2px rgba(14,42,61,0.06), 0 4px 14px rgba(14,42,61,0.06);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--mist);
+    color:var(--ink);
+    font-family:'Inter',system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .mono{font-family:'JetBrains Mono',ui-monospace,monospace;}
+  .display{font-family:'Space Grotesk',system-ui,sans-serif;}
+  a{color:inherit;}
+  button{font-family:inherit;}
+  ::selection{background:var(--river-teal-light);color:#fff;}
+
+  .wrap{max-width:560px;margin:0 auto;padding-bottom:56px;}
+
+  /* ---------- Header ---------- */
+  header{
+    background:linear-gradient(155deg,var(--deep-water) 0%,var(--deep-water-2) 100%);
+    color:var(--mist);
+    padding:16px 18px 14px;
+    position:sticky;top:0;z-index:40;
+    box-shadow:var(--shadow);
+  }
+  .hdr-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+  .hdr-title{font-family:'Space Grotesk';font-weight:700;font-size:16px;letter-spacing:0.01em;}
+  .hdr-title small{display:block;font-family:'JetBrains Mono';font-weight:400;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--river-teal-light);margin-top:2px;}
+  .hdr-clock{font-family:'JetBrains Mono';font-size:11px;color:rgba(238,243,241,0.65);text-align:right;white-space:nowrap;}
+  .hdr-status-row{display:flex;align-items:center;gap:8px;margin-top:12px;}
+  .status-pill{
+    font-family:'JetBrains Mono';font-weight:600;font-size:12px;letter-spacing:0.08em;
+    padding:4px 10px;border-radius:100px;text-transform:uppercase;
+    display:inline-flex;align-items:center;gap:6px;
+  }
+  .status-pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+  .status-normal{color:#4FBF85;background:rgba(79,191,133,0.18);}
+  .status-watch{color:#E3BB52;background:rgba(227,187,82,0.18);}
+  .status-warning{color:#E3873F;background:rgba(227,135,63,0.18);}
+  .status-severe{color:#E85F72;background:rgba(232,95,114,0.2);}
+  .status-severe .dot{animation:pulse 1.4s ease-in-out infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.35;}}
+  .refresh-btn{
+    margin-left:auto;background:rgba(238,243,241,0.1);border:1px solid rgba(238,243,241,0.18);
+    color:var(--mist);border-radius:100px;padding:4px 9px;font-size:11px;font-family:'JetBrains Mono';
+    display:flex;align-items:center;gap:5px;cursor:pointer;
+  }
+  .refresh-btn:hover{background:rgba(238,243,241,0.18);}
+  .refresh-btn svg{width:11px;height:11px;}
+  .refresh-btn.spinning svg{animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ---------- Gauge rail ---------- */
+  .gauge{padding:14px 18px 4px;background:var(--deep-water);}
+  .gauge-label-row{display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(238,243,241,0.5);margin-bottom:6px;}
+  .gauge-rail{position:relative;height:16px;border-radius:3px;overflow:visible;display:flex;box-shadow:inset 0 0 0 1px rgba(238,243,241,0.12);}
+  .gauge-seg{height:100%;}
+  .gauge-seg:first-child{border-radius:3px 0 0 3px;}
+  .gauge-seg:last-child{border-radius:0 3px 3px 0;}
+  .seg-normal{background:var(--gauge-normal);flex:30;}
+  .seg-watch{background:var(--gauge-watch);flex:25;}
+  .seg-warning{background:var(--gauge-warning);flex:25;}
+  .seg-severe{background:var(--gauge-severe);flex:20;}
+  .gauge-marker{
+    position:absolute;top:-7px;width:0;height:0;
+    border-left:6px solid transparent;border-right:6px solid transparent;
+    border-top:8px solid var(--mist);
+    transform:translateX(-50%);
+    transition:left 0.6s cubic-bezier(.4,0,.2,1);
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,0.4));
+  }
+  .gauge-marker::after{
+    content:'';position:absolute;top:8px;left:-1px;width:2px;height:20px;background:var(--mist);opacity:0.85;
+  }
+  .gauge-ticks{display:flex;margin-top:14px;padding-bottom:10px;}
+  .gauge-tick{flex:1;font-family:'JetBrains Mono';font-size:9px;letter-spacing:0.06em;color:rgba(238,243,241,0.55);}
+  .gauge-tick.active{color:var(--mist);font-weight:600;}
+  .gauge-tick:nth-child(1){flex:30;}
+  .gauge-tick:nth-child(2){flex:25;text-align:center;}
+  .gauge-tick:nth-child(3){flex:25;text-align:center;}
+  .gauge-tick:nth-child(4){flex:20;text-align:right;}
+
+  /* ---------- Official crisis strip ---------- */
+  .official-strip{
+    background:var(--deep-water);padding:0 18px 12px;display:flex;align-items:center;gap:6px;
+    overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+  }
+  .official-strip::-webkit-scrollbar{display:none;}
+  .os-label{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:0.14em;color:rgba(238,243,241,0.45);text-transform:uppercase;flex-shrink:0;}
+  .os-chip{
+    flex-shrink:0;font-family:'JetBrains Mono';font-size:10px;font-weight:600;letter-spacing:0.03em;
+    color:var(--mist);text-decoration:none;border:1px solid rgba(238,243,241,0.22);border-radius:100px;
+    padding:3px 9px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;
+  }
+  .os-chip:hover{background:rgba(238,243,241,0.12);}
+  .os-chip svg{width:9px;height:9px;opacity:0.7;}
+  .os-sos{border-color:rgba(232,95,114,0.55);color:#F0A4AF;}
+
+  .net-banner{
+    margin:10px 14px 0;padding:10px 12px;background:rgba(201,154,46,0.12);border:1px solid rgba(201,154,46,0.35);
+    border-radius:var(--radius);font-size:11.5px;line-height:1.5;color:#8a6a1f;
+  }
+
+  /* ---------- Map ---------- */
+  .map-section{position:relative;background:var(--paper);border-bottom:1px solid var(--line);}
+  #map{height:250px;width:100%;background:#dbe6e4;}
+  .map-controls{position:absolute;top:8px;right:8px;z-index:30;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
+  .map-chip{
+    background:rgba(251,253,252,0.94);border:1px solid var(--line-strong);border-radius:100px;
+    padding:4px 10px;font-family:'JetBrains Mono';font-size:10px;letter-spacing:0.04em;color:var(--ink);
+    display:flex;align-items:center;gap:6px;cursor:pointer;box-shadow:var(--shadow);
+  }
+  .map-chip svg{width:11px;height:11px;}
+  .map-time{
+    position:absolute;bottom:8px;left:8px;z-index:30;background:rgba(14,42,61,0.82);color:var(--mist);
+    font-family:'JetBrains Mono';font-size:10px;padding:3px 8px;border-radius:4px;letter-spacing:0.03em;
+  }
+  .leaflet-container{font-family:'Inter';}
+
+  /* ---------- Locations ---------- */
+  .section-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px 8px;
+  }
+  .section-head h2{font-family:'Space Grotesk';font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-soft);margin:0;}
+  .icon-btn{
+    background:var(--paper);border:1px solid var(--line-strong);border-radius:100px;
+    width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--ink);
+  }
+  .icon-btn:hover{background:#fff;border-color:var(--river-teal);}
+  .icon-btn svg{width:13px;height:13px;}
+
+  .locations{padding:0 14px;display:flex;flex-direction:column;gap:8px;}
+  .loc-card{
+    background:var(--paper);border:1px solid var(--line);border-left:3px solid var(--gauge-normal);
+    border-radius:var(--radius);padding:11px 13px;box-shadow:var(--shadow);
+    cursor:pointer;transition:border-color 0.15s;
+  }
+  .loc-card:hover{border-color:var(--line-strong);}
+  .loc-card.band-watch{border-left-color:var(--gauge-watch);}
+  .loc-card.band-warning{border-left-color:var(--gauge-warning);}
+  .loc-card.band-severe{border-left-color:var(--gauge-severe);}
+  .loc-card.stale .loc-stats,.loc-card.stale .discharge-trend{opacity:0.55;}
+  .loc-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+  .loc-name{font-family:'Space Grotesk';font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+  .loc-band-tag{
+    font-family:'JetBrains Mono';font-size:9.5px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;
+    padding:2px 7px;border-radius:100px;
+  }
+  .band-normal .loc-band-tag{color:var(--gauge-normal);background:rgba(47,143,91,0.13);}
+  .band-watch .loc-band-tag{color:var(--gauge-watch);background:rgba(201,154,46,0.15);}
+  .band-warning .loc-band-tag{color:var(--gauge-warning);background:rgba(193,89,28,0.15);}
+  .band-severe .loc-band-tag{color:var(--gauge-severe);background:rgba(178,51,69,0.16);}
+  .loc-actions{display:flex;align-items:center;gap:2px;flex-shrink:0;}
+  .loc-remove{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:2px;opacity:0.55;}
+  .loc-remove:hover{opacity:1;color:var(--gauge-severe);}
+  .loc-remove svg{width:12px;height:12px;display:block;}
+  .loc-chevron{background:none;border:none;color:var(--ink-soft);cursor:pointer;padding:2px;display:flex;}
+  .loc-chevron svg{width:13px;height:13px;transition:transform 0.2s;}
+  .loc-card.open .loc-chevron svg{transform:rotate(180deg);}
+  .loc-stats{display:flex;gap:16px;margin-top:8px;flex-wrap:wrap;}
+  .stat{font-family:'JetBrains Mono';}
+  .stat .v{font-size:15px;font-weight:600;}
+  .stat .l{font-size:9px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-top:1px;}
+  .discharge-trend{display:flex;align-items:center;gap:4px;font-family:'JetBrains Mono';font-size:11px;color:var(--ink-soft);margin-top:8px;}
+  .discharge-trend svg{width:12px;height:12px;}
+  .trend-up{color:var(--gauge-warning);}
+  .trend-down{color:var(--river-teal);}
+  .loc-updated{font-family:'JetBrains Mono';font-size:9px;color:var(--ink-soft);opacity:0.7;margin-top:7px;}
+  .loc-empty, .loc-error{font-family:'JetBrains Mono';font-size:11px;color:var(--ink-soft);padding:6px 0 2px;}
+  .loc-error{color:var(--gauge-severe);}
+  .loc-tap-hint{font-family:'JetBrains Mono';font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--river-teal-light);margin-top:7px;}
+
+  /* ---------- Expanded detail ---------- */
+  .loc-detail{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;}
+  .danger-banner{
+    border-radius:4px;padding:8px 10px;font-size:11.5px;line-height:1.45;margin-bottom:10px;
+    display:flex;gap:8px;align-items:flex-start;
+  }
+  .danger-banner .db-level{font-family:'JetBrains Mono';font-weight:600;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;padding:2px 6px;border-radius:3px;flex-shrink:0;margin-top:1px;}
+  .danger-low{background:rgba(47,143,91,0.1);color:#1f6b41;}
+  .danger-low .db-level{background:var(--gauge-normal);color:#fff;}
+  .danger-moderate{background:rgba(201,154,46,0.12);color:#7c6118;}
+  .danger-moderate .db-level{background:var(--gauge-watch);color:#fff;}
+  .danger-high{background:rgba(193,89,28,0.12);color:#8a4313;}
+  .danger-high .db-level{background:var(--gauge-warning);color:#fff;}
+  .danger-severe{background:rgba(178,51,69,0.12);color:#8e2738;}
+  .danger-severe .db-level{background:var(--gauge-severe);color:#fff;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:10px;}
+  .detail-cell{background:var(--mist);border-radius:4px;padding:7px 9px;font-family:'JetBrains Mono';}
+  .detail-cell .v{font-size:13px;font-weight:600;display:block;}
+  .detail-cell .v small{font-size:9.5px;font-weight:400;color:var(--ink-soft);}
+  .detail-cell .l{font-size:8.5px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-soft);display:block;margin-top:2px;}
+  .chart-wrap{background:var(--mist);border-radius:4px;padding:8px 6px 2px;}
+  .chart-wrap svg{width:100%;height:auto;display:block;}
+  .chart-cap{font-family:'JetBrains Mono';font-size:8.5px;color:var(--ink-soft);padding:2px 4px 6px;line-height:1.5;}
+  .detail-actions{display:flex;justify-content:space-between;align-items:center;margin-top:8px;}
+  .locate-btn{background:none;border:1px solid var(--line-strong);border-radius:100px;padding:3px 10px;font-family:'JetBrains Mono';font-size:10px;color:var(--river-teal);cursor:pointer;display:inline-flex;align-items:center;gap:4px;}
+  .locate-btn:hover{border-color:var(--river-teal);background:rgba(30,110,122,0.06);}
+  .locate-btn svg{width:10px;height:10px;}
+
+  .empty-state{
+    margin:0 14px;padding:22px 16px;text-align:center;border:1px dashed var(--line-strong);border-radius:var(--radius);
+    color:var(--ink-soft);font-size:12.5px;
+  }
+
+  /* ---------- Add / settings panel ---------- */
+  .panel{
+    margin:10px 14px 0;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);overflow:hidden;max-height:0;transition:max-height 0.3s ease;
+  }
+  .panel.open{max-height:600px;}
+  .panel-inner{padding:14px;}
+  .panel h3{font-family:'Space Grotesk';font-size:12px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);margin:0 0 10px;}
+  .search-row{display:flex;gap:6px;}
+  .search-row input{
+    flex:1;border:1px solid var(--line-strong);border-radius:4px;padding:8px 10px;font-family:'Inter';font-size:13px;
+    background:#fff;color:var(--ink);
+  }
+  .search-row input:focus{outline:2px solid var(--river-teal);outline-offset:-1px;}
+  .btn{
+    background:var(--river-teal);color:#fff;border:none;border-radius:4px;padding:8px 13px;font-size:12.5px;font-weight:600;
+    cursor:pointer;font-family:'Inter';white-space:nowrap;
+  }
+  .btn:hover{background:#175660;}
+  .btn.ghost{background:transparent;color:var(--river-teal);border:1px solid var(--river-teal);}
+  .btn.ghost:hover{background:rgba(30,110,122,0.08);}
+  .btn:disabled{opacity:0.5;cursor:default;}
+  .geo-btn{width:100%;margin-top:8px;}
+  .search-results{margin-top:8px;display:flex;flex-direction:column;gap:5px;}
+  .search-result{
+    display:flex;justify-content:space-between;align-items:center;padding:7px 9px;background:var(--mist);
+    border-radius:4px;font-size:12.5px;cursor:pointer;
+  }
+  .search-result:hover{background:#e2ebe8;}
+  .search-result span.sub{color:var(--ink-soft);font-size:10.5px;display:block;}
+
+  .thresh-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;}
+  .thresh-field label{display:block;font-family:'JetBrains Mono';font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink-soft);margin-bottom:4px;}
+  .thresh-field .input-unit{position:relative;}
+  .thresh-field input{width:100%;border:1px solid var(--line-strong);border-radius:4px;padding:7px 26px 7px 9px;font-family:'JetBrains Mono';font-size:13px;background:#fff;color:var(--ink);}
+  .thresh-field .unit{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:10px;color:var(--ink-soft);font-family:'JetBrains Mono';}
+  .toggle-row{display:flex;align-items:center;justify-content:space-between;margin-top:12px;padding-top:12px;border-top:1px solid var(--line);}
+  .toggle-row span{font-size:12.5px;}
+  .switch{position:relative;width:34px;height:19px;flex-shrink:0;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider{position:absolute;inset:0;background:var(--line-strong);border-radius:20px;cursor:pointer;transition:0.2s;}
+  .slider::before{content:'';position:absolute;width:15px;height:15px;left:2px;top:2px;background:#fff;border-radius:50%;transition:0.2s;}
+  input:checked + .slider{background:var(--river-teal);}
+  input:checked + .slider::before{transform:translateX(15px);}
+  .panel-save{display:flex;justify-content:flex-end;gap:8px;margin-top:12px;}
+  .shared-note{font-size:10.5px;color:var(--ink-soft);margin-top:10px;line-height:1.5;padding-top:10px;border-top:1px solid var(--line);}
+
+  /* ---------- Footer ---------- */
+  footer{padding:18px 18px 8px;font-size:10.5px;color:var(--ink-soft);line-height:1.6;}
+  footer a{text-decoration:underline;text-decoration-color:var(--line-strong);}
+
+  .toast{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:var(--deep-water);color:var(--mist);padding:9px 16px;border-radius:100px;font-size:12px;
+    font-family:'JetBrains Mono';opacity:0;transition:0.25s;pointer-events:none;z-index:100;white-space:nowrap;
+    box-shadow:var(--shadow);
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+  :focus-visible{outline:2px solid var(--river-teal);outline-offset:2px;}
+
+  @media (prefers-reduced-motion: reduce){
+    .status-severe .dot{animation:none;}
+    .refresh-btn.spinning svg{animation:none;}
+    .gauge-marker{transition:none;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="hdr-top">
+      <div class="hdr-title">Rain &amp; Flood Watch<small>Brahmaputra basin · Assam · live</small></div>
+      <div class="hdr-clock" id="clock">—</div>
+    </div>
+    <div class="hdr-status-row">
+      <span class="status-pill status-normal" id="overallStatus" role="status" aria-live="polite"><span class="dot"></span><span id="overallStatusText">Loading</span></span>
+      <button class="refresh-btn" id="refreshBtn" title="Refresh now">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        <span id="refreshLabel">updated —</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="gauge">
+    <div class="gauge-label-row"><span>Aggregate risk</span><span id="gaugeScoreLabel">— / 100</span></div>
+    <div class="gauge-rail">
+      <div class="gauge-seg seg-normal"></div>
+      <div class="gauge-seg seg-watch"></div>
+      <div class="gauge-seg seg-warning"></div>
+      <div class="gauge-seg seg-severe"></div>
+      <div class="gauge-marker" id="gaugeMarker" style="left:0%"></div>
+    </div>
+    <div class="gauge-ticks">
+      <div class="gauge-tick active" id="tickNormal">NORMAL</div>
+      <div class="gauge-tick">WATCH</div>
+      <div class="gauge-tick">WARNING</div>
+      <div class="gauge-tick">SEVERE</div>
+    </div>
+  </div>
+
+  <div class="official-strip" aria-label="Official sources">
+    <span class="os-label">Official</span>
+    <a class="os-chip" href="https://asdma.assam.gov.in/" target="_blank" rel="noopener">ASDMA
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+    <a class="os-chip" href="https://ffs.india-water.gov.in/" target="_blank" rel="noopener">CWC Flood Forecast
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+    <a class="os-chip" href="https://mausam.imd.gov.in/" target="_blank" rel="noopener">IMD
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+    <a class="os-chip os-sos" href="tel:112">SOS 112</a>
+    <a class="os-chip os-sos" href="tel:1077">District 1077</a>
+  </div>
+
+  <div class="net-banner" id="netBanner" style="display:none;">
+    Can't reach live data right now — check your connection. Last saved numbers are shown where available, and the page keeps retrying on its own.
+  </div>
+
+  <div class="map-section">
+    <div id="map"></div>
+    <div class="map-controls">
+      <div class="map-chip" id="layerToggle">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        <span id="layerLabel">Radar</span>
+      </div>
+      <div class="map-chip" id="playToggle">
+        <svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><polygon points="5,3 19,12 5,21"/></svg>
+        <span id="playLabel">Play</span>
+      </div>
+    </div>
+    <div class="map-time" id="mapTime">loading radar…</div>
+  </div>
+
+  <div class="section-head">
+    <h2>Watched locations</h2>
+    <button class="icon-btn" id="addToggle" title="Add a location" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+
+  <div class="panel" id="addPanel">
+    <div class="panel-inner">
+      <h3>Add a location</h3>
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="Town or village name" autocomplete="off">
+        <button class="btn" id="searchBtn">Search</button>
+      </div>
+      <button class="btn ghost geo-btn" id="geoBtn">Use my current location</button>
+      <div class="search-results" id="searchResults"></div>
+      <p class="shared-note">Tip: you can also tap anywhere on the map above to watch that spot. Saved to this browser only.</p>
+    </div>
+  </div>
+
+  <div class="locations" id="locations"></div>
+  <div class="empty-state" id="emptyState" style="display:none;">No locations yet. Tap + above to add a town near you.</div>
+
+  <div class="section-head">
+    <h2>Alert settings</h2>
+    <button class="icon-btn" id="settingsToggle" title="Alert thresholds" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+
+  <div class="panel" id="settingsPanel">
+    <div class="panel-inner">
+      <h3>24-hour forecast rain thresholds</h3>
+      <div class="thresh-grid">
+        <div class="thresh-field">
+          <label>Watch from</label>
+          <div class="input-unit"><input type="number" id="thWatch" min="0" step="1"><span class="unit">mm</span></div>
+        </div>
+        <div class="thresh-field">
+          <label>Warning from</label>
+          <div class="input-unit"><input type="number" id="thWarning" min="0" step="1"><span class="unit">mm</span></div>
+        </div>
+        <div class="thresh-field">
+          <label>Severe from</label>
+          <div class="input-unit"><input type="number" id="thSevere" min="0" step="1"><span class="unit">mm</span></div>
+        </div>
+        <div class="thresh-field">
+          <label>River surge trigger</label>
+          <div class="input-unit"><input type="number" id="thSurge" min="0" step="5"><span class="unit">%</span></div>
+        </div>
+      </div>
+      <div class="toggle-row">
+        <span>Browser alerts on this device</span>
+        <label class="switch"><input type="checkbox" id="notifyToggle"><span class="slider"></span></label>
+      </div>
+      <div class="panel-save">
+        <button class="btn ghost" id="resetThresh">Reset to defaults</button>
+        <button class="btn" id="saveThresh">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Rain forecasts from Open-Meteo (GFS/ICON models). River discharge from the Open-Meteo Flood API (GloFAS). Radar &amp; satellite mosaic from RainViewer. These are global models used as an early indicator — <strong>not a substitute for official bulletins</strong>. In an emergency call <a href="tel:112">112</a> or your district control room <a href="tel:1077">1077</a>; follow <a href="https://asdma.assam.gov.in/" target="_blank" rel="noopener">ASDMA</a> and <a href="https://ffs.india-water.gov.in/" target="_blank" rel="noopener">Central Water Commission</a> flood forecasts. Data auto-refreshes every 10 minutes.
+  </footer>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+
+(function(){
+  "use strict";
+
+  /* ============ Defaults ============ */
+  var DEFAULT_LOCATIONS = [
+    { id:'golakganj', name:'Golakganj', lat:26.10, lon:89.83 },
+    { id:'dhubri',    name:'Dhubri',    lat:26.02, lon:89.98 },
+    { id:'guwahati',  name:'Guwahati',  lat:26.14, lon:91.73 }
+  ];
+  var DEFAULT_THRESHOLDS = { watch24:15, warning24:65, severe24:150, rateHeavy:15, rateExtreme:30, dischargeSurge:40 };
+  var REFRESH_MS = 10 * 60 * 1000;        // weather + river data
+  var RADAR_REFRESH_MS = 5 * 60 * 1000;   // radar frames
+  var RADAR_FRAME_MS = 700;
+  var FETCH_TIMEOUT_MS = 12000;
+
+  /* ============ State ============ */
+  var state = {
+    locations: DEFAULT_LOCATIONS.map(cloneLoc),
+    thresholds: Object.assign({}, DEFAULT_THRESHOLDS),
+    notify: false,
+    map: null,
+    markers: {},
+    radar: { frames: [], idx: 0, timer: null, playing: true, host: '', mode: 'radar', layers: {}, lastLoad: 0 },
+    refreshTimer: null,
+    radarTimer: null,
+    refreshing: false,
+    boundsFitted: false,
+    expanded: {},
+    lastDataRefresh: 0
+  };
+
+  function cloneLoc(l){ return { id:l.id, name:l.name, lat:l.lat, lon:l.lon }; }
+  function uid(){ return 'loc' + Math.random().toString(36).slice(2,9); }
+
+  /* ============ Storage ============ */
+  var LS_CONFIG_KEY = 'flood-watch-config';
+  var LS_NOTIFY_KEY = 'flood-watch-notify';
+  var LS_CACHE_KEY = 'flood-watch-cache-v1';
+
+  function hasStorage(){
+    try{ return typeof localStorage !== 'undefined' && localStorage !== null; }
+    catch(e){ return false; }
+  }
+
+  function readCache(){
+    if(!hasStorage()) return {};
+    try{ return JSON.parse(localStorage.getItem(LS_CACHE_KEY)) || {}; }catch(e){ return {}; }
+  }
+
+  function writeCache(){
+    if(!hasStorage()) return;
+    var c = {};
+    state.locations.forEach(function(l){
+      if(l._updated && !l._error){
+        c[l.id] = {
+          rainNow: l.rainNow, next6: l.next6, next24: l.next24,
+          peakRate: l.peakRate, peakRateTime: l.peakRateTime,
+          dailyRain: l.dailyRain, dischargeSeries: l.dischargeSeries,
+          todayStr: l.todayStr, dischargeTrend: l.dischargeTrend,
+          peakFcstDisc: l.peakFcstDisc, updated: l._updated.getTime()
+        };
+      }
+    });
+    try{ localStorage.setItem(LS_CACHE_KEY, JSON.stringify(c)); }catch(e){}
+  }
+
+  function applyCache(){
+    var cache = readCache();
+    state.locations.forEach(function(loc){
+      var c = cache[loc.id];
+      if(!c) return;
+      loc.rainNow = c.rainNow; loc.next6 = c.next6; loc.next24 = c.next24;
+      loc.peakRate = c.peakRate; loc.peakRateTime = c.peakRateTime;
+      loc.dailyRain = c.dailyRain; loc.dischargeSeries = c.dischargeSeries;
+      loc.todayStr = c.todayStr; loc.dischargeTrend = c.dischargeTrend;
+      loc.peakFcstDisc = c.peakFcstDisc;
+      loc._updated = new Date(c.updated);
+      loc._cached = true;
+      var cls = classify(loc, state.thresholds);
+      loc._score = cls.score; loc._band = cls.band;
+    });
+  }
+
+  function loadConfig(){
+    if(hasStorage()){
+      try{
+        var raw = localStorage.getItem(LS_CONFIG_KEY);
+        if(raw){
+          var cfg = JSON.parse(raw);
+          if(Array.isArray(cfg.locations) && cfg.locations.length){ state.locations = cfg.locations; }
+          if(cfg.thresholds){ state.thresholds = Object.assign({}, DEFAULT_THRESHOLDS, cfg.thresholds); }
+        }
+        var notify = localStorage.getItem(LS_NOTIFY_KEY);
+        if(notify){ state.notify = notify === '1'; document.getElementById('notifyToggle').checked = state.notify; }
+      }catch(e){ console.error('config read failed', e); }
+    }
+    applyCache();           // paint last known numbers instantly
+    renderAll();
+    refreshAll();           // then fetch fresh
+  }
+
+  function saveConfig(){
+    if(!hasStorage()) return;
+    try{
+      localStorage.setItem(LS_CONFIG_KEY, JSON.stringify({ locations: state.locations.map(function(l){
+        return { id:l.id, name:l.name, lat:l.lat, lon:l.lon };
+      }), thresholds: state.thresholds }));
+    }catch(e){ console.error('save failed', e); }
+  }
+
+  function saveNotifyPref(){
+    if(!hasStorage()) return;
+    try{ localStorage.setItem(LS_NOTIFY_KEY, state.notify ? '1' : '0'); }catch(e){}
+  }
+
+  /* ============ Utilities ============ */
+  function toast(msg){
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._h);
+    toast._h = setTimeout(function(){ t.classList.remove('show'); }, 2600);
+  }
+
+  function fmtTime(d){
+    return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+  }
+
+  function fmt1(n){
+    if(n === null || n === undefined || isNaN(n)) return '—';
+    return (Math.round(n*10)/10).toString();
+  }
+
+  function pad2(n){ return (n<10?'0':'') + n; }
+
+  function fmtCms(v){
+    if(v === null || v === undefined || isNaN(v)) return '—';
+    if(v >= 10000) return Math.round(v/1000) + 'k';
+    if(v >= 1000) return (Math.round(v/100)/10) + 'k';
+    return String(Math.round(v));
+  }
+
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function shiftDate(dateStr, days){
+    var p = dateStr.split('-');
+    var d = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0,10);
+  }
+  function dateLabel(ds){
+    var p = ds.split('-');
+    return (+p[2]) + ' ' + MONTHS[+p[1]-1];
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  /* ============ Fetch with timeout + one retry ============ */
+  function fetchOnce(url, timeoutMs){
+    return new Promise(function(resolve, reject){
+      var ctrl = new AbortController();
+      var t = setTimeout(function(){ ctrl.abort(); }, timeoutMs);
+      fetch(url, { signal: ctrl.signal }).then(function(r){
+        clearTimeout(t);
+        if(!r.ok) reject(new Error('http ' + r.status));
+        else resolve(r.json());
+      }).catch(function(err){
+        clearTimeout(t);
+        reject(err);
+      });
+    });
+  }
+
+  function fetchJSON(url){
+    return fetchOnce(url, FETCH_TIMEOUT_MS).catch(function(){
+      return new Promise(function(res, rej){ setTimeout(function(){ fetchOnce(url, FETCH_TIMEOUT_MS).then(res, rej); }, 1800); });
+    });
+  }
+
+  /* ============ Risk model ============ */
+  function riskScore(next24, th){
+    var breaks = [0, th.watch24, th.warning24, th.severe24, th.severe24*1.6];
+    var scores = [0, 30, 55, 80, 100];
+    var val = Math.min(Math.max(next24,0), breaks[4]);
+    for(var i=0;i<4;i++){
+      if(val <= breaks[i+1]){
+        var span = (breaks[i+1]-breaks[i]) || 1;
+        var t = (val - breaks[i]) / span;
+        return scores[i] + t*(scores[i+1]-scores[i]);
+      }
+    }
+    return 100;
+  }
+
+  function bandFromScore(score){
+    if(score >= 80) return 'severe';
+    if(score >= 55) return 'warning';
+    if(score >= 30) return 'watch';
+    return 'normal';
+  }
+
+  function classify(loc, th){
+    var score = riskScore(loc.next24 == null ? 0 : loc.next24, th);
+    if(loc.rainNow != null){
+      if(loc.rainNow >= th.rateExtreme) score = Math.max(score, 85);
+      else if(loc.rainNow >= th.rateHeavy) score = Math.max(score, 60);
+    }
+    if(loc.peakRate != null){
+      if(loc.peakRate >= th.rateExtreme) score = Math.max(score, 85);
+      else if(loc.peakRate >= th.rateHeavy) score = Math.max(score, 60);
+    }
+    if(loc.dischargeTrend && loc.dischargeTrend.pctChange != null && loc.dischargeTrend.pctChange*100 >= th.dischargeSurge){
+      score = Math.min(100, score + 15);
+    }
+    score = Math.min(100, Math.max(0, score));
+    return { score: score, band: bandFromScore(score) };
+  }
+
+  var BAND_RANK = { normal:0, watch:1, warning:2, severe:3 };
+  var BAND_LABEL = { normal:'Normal', watch:'Watch', warning:'Warning', severe:'Severe' };
+
+  /* ============ Data fetch ============ */
+  function fetchLocationData(loc){
+    var wxUrl = 'https://api.open-meteo.com/v1/forecast?latitude=' + loc.lat + '&longitude=' + loc.lon +
+      '&current=precipitation,rain&hourly=precipitation,precipitation_probability&timezone=auto&forecast_days=3&past_days=5';
+    var floodUrl = 'https://flood-api.open-meteo.com/v1/flood?latitude=' + loc.lat + '&longitude=' + loc.lon +
+      '&daily=river_discharge&past_days=7&forecast_days=5&timezone=auto';
+
+    var wxP = fetchJSON(wxUrl).catch(function(){ return { __failed:true }; });
+    var floodP = fetchJSON(floodUrl).catch(function(){ return null; });
+
+    return Promise.all([wxP, floodP]).then(function(res){
+      var wx = res[0], flood = res[1];
+      var out = { rainNow:null, next6:null, next24:null, peakRate:null, peakRateTime:null,
+                  dailyRain:null, dischargeSeries:null, todayStr:null,
+                  dischargeTrend:null, peakFcstDisc:null, error:null, wxError:false };
+
+      var times = (wx && wx.hourly && wx.hourly.time) || [];
+      var precip = (wx && wx.hourly && wx.hourly.precipitation) || [];
+
+      if(wx && wx.current){
+        out.rainNow = wx.current.precipitation != null ? wx.current.precipitation : wx.current.rain;
+        out.todayStr = wx.current.time ? wx.current.time.slice(0,10) : null;
+      }
+      if(!out.todayStr && times.length) out.todayStr = times[Math.floor(times.length/2)].slice(0,10);
+      if(!out.todayStr){
+        var nn = new Date();
+        out.todayStr = nn.getFullYear() + '-' + pad2(nn.getMonth()+1) + '-' + pad2(nn.getDate());
+      }
+      if(wx && wx.__failed) out.wxError = true;
+
+      if(times.length && precip.length){
+        // first hourly slot at or after "now"
+        var nowRef = wx.current ? wx.current.time : null;
+        var startIdx = 0;
+        if(nowRef){
+          startIdx = times.length;
+          for(var i=0; i<times.length; i++){ if(times[i] >= nowRef){ startIdx = i; break; } }
+          if(startIdx === times.length) startIdx = Math.max(0, times.length - 24);
+        }
+        var sum6 = 0, sum24 = 0, peak = null, peakIdx = -1;
+        for(var j=startIdx; j<Math.min(times.length, startIdx+24); j++){
+          var p = precip[j] || 0;
+          sum24 += p;
+          if(j < startIdx+6) sum6 += p;
+          if(peak === null || p > peak){ peak = p; peakIdx = j; }
+        }
+        out.next6 = sum6;
+        out.next24 = sum24;
+        if(peakIdx >= 0){
+          out.peakRate = peak;
+          out.peakRateTime = times[peakIdx].slice(11,16);
+        }
+        // daily rain totals across the whole fetched range
+        var byDate = {};
+        for(var k=0; k<times.length; k++){
+          var ds = times[k].slice(0,10);
+          byDate[ds] = (byDate[ds] || 0) + (precip[k] || 0);
+        }
+        out.dailyRain = Object.keys(byDate).sort().map(function(ds){ return { date: ds, mm: byDate[ds] }; });
+      }
+
+      if(flood && flood.daily && flood.daily.river_discharge && flood.daily.time){
+        var ftimes = flood.daily.time, disc = flood.daily.river_discharge;
+        var todayIdx = out.todayStr ? ftimes.indexOf(out.todayStr) : -1;
+        if(todayIdx === -1) todayIdx = Math.min(7, disc.length-1);
+
+        var priorSlice = disc.slice(Math.max(0,todayIdx-7), todayIdx).filter(function(v){ return v!=null; });
+        if(priorSlice.length && disc[todayIdx] != null){
+          var avg7 = priorSlice.reduce(function(a,b){return a+b;},0) / priorSlice.length;
+          var today = disc[todayIdx];
+          var pctChange = avg7 > 0 ? (today - avg7) / avg7 : 0;
+          out.dischargeTrend = { today: today, avg7: avg7, pctChange: pctChange };
+        }
+        // series for chart: 5 days back to 5 days ahead
+        var s0 = Math.max(0, todayIdx-5), s1 = Math.min(disc.length-1, todayIdx+5);
+        var series = [];
+        for(var m=s0; m<=s1; m++) series.push({ date: ftimes[m], v: disc[m] });
+        out.dischargeSeries = series;
+        // peak forecast discharge
+        var fp = null, fpd = null;
+        for(var n=todayIdx; n<=s1; n++){
+          if(disc[n] != null && (fp === null || disc[n] > fp)){ fp = disc[n]; fpd = ftimes[n]; }
+        }
+        if(fp !== null) out.peakFcstDisc = { v: fp, date: fpd };
+      }
+      return out;
+    });
+  }
+
+  function refreshAll(){
+    if(state.refreshing) return;
+    state.refreshing = true;
+    state.lastDataRefresh = Date.now();
+    var btn = document.getElementById('refreshBtn');
+    btn.classList.add('spinning');
+
+    var jobs = state.locations.map(function(loc){
+      return fetchLocationData(loc).then(function(data){
+        var prevBand = loc._band;
+        var floodOk = !!(data.dischargeTrend || (data.dischargeSeries && data.dischargeSeries.length));
+        if(data.wxError && !floodOk){
+          // total failure for this location — keep any previous numbers
+          if(loc._score === undefined){ loc._error = 'Could not reach data services'; }
+          loc._updated = loc._updated || new Date();
+          return;
+        }
+        Object.assign(loc, data);
+        var cls = classify(loc, state.thresholds);
+        loc._score = cls.score; loc._band = cls.band; loc._updated = new Date(); loc._error = null; loc._cached = false;
+        loc._wxError = !!data.wxError;
+        maybeNotify(loc, prevBand);
+      }).catch(function(err){
+        if(loc._score === undefined){ loc._error = 'Could not reach data services'; }
+        loc._updated = loc._updated || new Date();
+      });
+    });
+
+    Promise.all(jobs).then(function(){
+      state.refreshing = false;
+      btn.classList.remove('spinning');
+      document.getElementById('refreshLabel').textContent = 'updated ' + fmtTime(new Date());
+      writeCache();
+      renderLocations();
+      renderGauge();
+      var allFailed = state.locations.length > 0 && state.locations.every(function(l){ return !!l._error; });
+      document.getElementById('netBanner').style.display = allFailed ? 'block' : 'none';
+    });
+  }
+
+  function maybeNotify(loc, prevBand){
+    if(!state.notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if(!prevBand) return;
+    if(BAND_RANK[loc._band] > BAND_RANK[prevBand] && BAND_RANK[loc._band] >= BAND_RANK.warning){
+      try{
+        new Notification('Rising risk: ' + loc.name, {
+          body: BAND_LABEL[loc._band] + ' — ' + fmt1(loc.next24) + ' mm expected in next 24h.'
+        });
+      }catch(e){}
+    }
+  }
+
+
+/* ============ Radar / satellite ============ */
+function loadRadar(){
+  fetchJSON('https://api.rainviewer.com/public/weather-maps.json').then(function(data){
+    state.radar.host = data.host;
+    state.radar.lastLoad = Date.now();
+    var frames = state.radar.mode === 'satellite'
+      ? (data.satellite && data.satellite.infrared ? data.satellite.infrared : [])
+      : (data.radar && data.radar.past ? data.radar.past.slice(-8) : []);
+    clearRadarLayers();
+    state.radar.frames = frames;
+    state.radar.idx = frames.length - 1;
+    drawRadarFrame();
+    startRadarLoop();
+    preloadRadarLayers();
+  }).catch(function(){
+    document.getElementById('mapTime').textContent = 'radar unavailable';
+  });
+}
+
+function clearRadarLayers(){
+  if(state.map){
+    Object.keys(state.radar.layers).forEach(function(k){
+      state.map.removeLayer(state.radar.layers[k]);
+    });
+  }
+  state.radar.layers = {};
+}
+
+function tileUrlFor(frame){
+  if(!frame) return null;
+  if(state.radar.mode === 'satellite'){
+    return state.radar.host + frame.path + '/256/{z}/{x}/{y}/0/0_0.png';
+  }
+  return state.radar.host + frame.path + '/256/{z}/{x}/{y}/2/1_1.png';
+}
+
+function ensureRadarLayer(i){
+  if(state.radar.layers[i] || !state.map) return;
+  var url = tileUrlFor(state.radar.frames[i]);
+  if(!url) return;
+  state.radar.layers[i] = L.tileLayer(url, { opacity: 0, zIndex: 10 }).addTo(state.map);
+}
+
+function drawRadarFrame(){
+  var frames = state.radar.frames;
+  if(!frames.length || !state.map) return;
+  var idx = state.radar.idx;
+  Object.keys(state.radar.layers).forEach(function(k){
+    if(+k !== idx) state.radar.layers[k].setOpacity(0);
+  });
+  ensureRadarLayer(idx);
+  if(state.radar.layers[idx]){
+    state.radar.layers[idx].setOpacity(0.65);
+    state.radar.layers[idx].bringToFront();
+  }
+  var d = new Date(frames[idx].time * 1000);
+  document.getElementById('mapTime').textContent = (state.radar.mode==='satellite' ? 'Satellite IR · ' : 'Radar · ') + fmtTime(d);
+}
+
+function preloadRadarLayers(){
+  var frames = state.radar.frames.slice();
+  frames.forEach(function(f, i){
+    setTimeout(function(){
+      if(state.radar.frames[i] !== f) return;   // frames were reloaded since
+      ensureRadarLayer(i);
+    }, 900 + i*400);
+  });
+}
+
+function startRadarLoop(){
+  clearInterval(state.radar.timer);
+  if(!state.radar.playing) return;
+  state.radar.timer = setInterval(function(){
+    var frames = state.radar.frames;
+    if(!frames.length) return;
+    state.radar.idx = (state.radar.idx + 1) % frames.length;
+    drawRadarFrame();
+  }, RADAR_FRAME_MS);
+}
+
+/* ============ Map ============ */
+function initMap(){
+  state.map = L.map('map', { zoomControl:false, attributionControl:false }).setView([26.05, 90.4], 8);
+  L.control.zoom({ position:'bottomright' }).addTo(state.map);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    subdomains:'abcd', maxZoom:19
+  }).addTo(state.map);
+  state.map.on('click', function(e){
+    reverseAddAt(e.latlng.lat, e.latlng.lng);
+  });
+}
+
+function reverseAddAt(lat, lon){
+  addLocation({ id: uid(), name: 'Pinned ' + lat.toFixed(2) + ', ' + lon.toFixed(2), lat: +lat.toFixed(4), lon: +lon.toFixed(4) });
+}
+
+function syncMarkers(){
+  Object.keys(state.markers).forEach(function(id){
+    if(!state.locations.find(function(l){return l.id===id;})){
+      state.map.removeLayer(state.markers[id]);
+      delete state.markers[id];
+    }
+  });
+  state.locations.forEach(function(loc){
+    var color = '#2F8F5B';
+    if(loc._band === 'watch') color = '#C99A2E';
+    else if(loc._band === 'warning') color = '#C1591C';
+    else if(loc._band === 'severe') color = '#B23345';
+
+    if(state.markers[loc.id]){
+      state.markers[loc.id].setLatLng([loc.lat, loc.lon]);
+      state.markers[loc.id].setStyle({ fillColor: color });
+    } else {
+      var m = L.circleMarker([loc.lat, loc.lon], {
+        radius: 7, fillColor: color, color:'#fff', weight:2, fillOpacity:0.95
+      }).addTo(state.map);
+      m.bindTooltip(loc.name, { direction:'top', offset:[0,-6] });
+      (function(locRef, marker){
+        marker.on('click', function(e){
+          L.DomEvent.stopPropagation(e);
+          state.expanded[locRef.id] = true;
+          renderLocations();
+          var el = document.getElementById('card-' + locRef.id);
+          if(el) el.scrollIntoView({ behavior:'smooth', block:'center' });
+        });
+      })(loc, m);
+      state.markers[loc.id] = m;
+    }
+  });
+  if(!state.boundsFitted && state.locations.length){
+    fitToMarkers();
+    state.boundsFitted = true;
+  }
+}
+
+function fitToMarkers(){
+  var vals = Object.keys(state.markers).map(function(k){ return state.markers[k]; });
+  if(!vals.length) return;
+  var group = L.featureGroup(vals);
+  state.map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 11 });
+}
+
+/* ============ Danger assessment ============ */
+function dangerAssessment(loc, th){
+  var reasons = [];
+  var dt = loc.dischargeTrend;
+  if(dt && dt.pctChange != null){
+    var pct = Math.round(dt.pctChange*100);
+    if(dt.pctChange*100 >= th.dischargeSurge) reasons.push('river running ' + (pct>0?'+':'') + pct + '% above its 7-day average');
+    else if(dt.pctChange >= 0.08) reasons.push('river rising (+' + pct + '% vs 7-day avg)');
+    else if(dt.pctChange <= -0.08) reasons.push('river easing (' + pct + '% vs 7-day avg)');
+  }
+  if(loc.peakRate != null && loc.peakRate >= th.rateExtreme){
+    reasons.push('extreme rain burst up to ' + fmt1(loc.peakRate) + ' mm/h' + (loc.peakRateTime ? ' around ' + loc.peakRateTime : ''));
+  } else if(loc.peakRate != null && loc.peakRate >= th.rateHeavy){
+    reasons.push('heavy rain bursts up to ' + fmt1(loc.peakRate) + ' mm/h' + (loc.peakRateTime ? ' around ' + loc.peakRateTime : ''));
+  }
+  if(loc.next24 != null && loc.next24 >= th.watch24){
+    reasons.push(fmt1(loc.next24) + ' mm more rain expected in the next 24 h');
+  }
+  var score = loc._score || 0;
+  var level, headline;
+  if(score >= 80){
+    level = 'severe';
+    headline = 'Avoid low-lying areas and be ready to move to higher ground. Follow ASDMA / district administration advice immediately.';
+  } else if(score >= 55){
+    level = 'high';
+    headline = 'Flooding possible — prepare to move, avoid crossing flowing water, keep phones charged and documents dry.';
+  } else if(score >= 30){
+    level = 'moderate';
+    headline = 'Conditions could worsen over the next day — keep checking and stay near official updates.';
+  } else {
+    level = 'low';
+    headline = 'No significant rain or river signal from the models right now.';
+  }
+  if(!reasons.length) reasons.push('rain and river within normal range');
+  return { level: level, headline: headline, reasons: reasons };
+}
+
+/* ============ Chart ============ */
+function renderChart(loc){
+  var W=340, H=172, L=40, R=40, T=26, B=20;
+  var plotW = W-L-R, plotH = H-T-B;
+  var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
+  var dates = [], i;
+  for(i=-5; i<=5; i++) dates.push(shiftDate(anchor, i));
+
+  var rainMap = {}, discMap = {}, rainMax = 10, discMax = 1;
+  (loc.dailyRain || []).forEach(function(d){
+    rainMap[d.date] = d.mm;
+    if(d.mm > rainMax) rainMax = d.mm;
+  });
+  (loc.dischargeSeries || []).forEach(function(d){
+    if(d.v != null){
+      discMap[d.date] = d.v;
+      if(d.v > discMax) discMax = d.v;
+    }
+  });
+  rainMax *= 1.15;
+  discMax *= 1.15;
+
+  var step = plotW / dates.length;
+  function X(idx){ return L + (idx + 0.5) * step; }
+  function YR(v){ return T + plotH - (v / rainMax) * plotH; }
+  function YD(v){ return T + plotH - (v / discMax) * plotH; }
+
+  var s = '';
+  // forecast shading (right of today)
+  s += '<rect x="' + (L + 5.5*step).toFixed(1) + '" y="' + T + '" width="' + (plotW - 5.5*step).toFixed(1) + '" height="' + plotH + '" fill="rgba(30,110,122,0.06)"/>';
+  // gridlines + axes
+  for(i=0; i<=2; i++){
+    var gy = (T + plotH - i*(plotH/2)).toFixed(1);
+    s += '<line x1="' + L + '" y1="' + gy + '" x2="' + (L+plotW) + '" y2="' + gy + '" stroke="rgba(18,38,46,0.1)" stroke-width="1"/>';
+    s += '<text x="' + (L-4) + '" y="' + (+gy+3) + '" text-anchor="end" font-size="7.5" fill="#1E6E7A" font-family="JetBrains Mono">' + fmtCms(discMax*i/2) + '</text>';
+    s += '<text x="' + (L+plotW+4) + '" y="' + (+gy+3) + '" text-anchor="start" font-size="7.5" fill="#3F7FB5" font-family="JetBrains Mono">' + Math.round(rainMax*i/2) + '</text>';
+  }
+  // rain bars
+  var bw = step * 0.5;
+  dates.forEach(function(ds, idx){
+    var v = rainMap[ds];
+    if(v == null || v <= 0) return;
+    var future = idx > 5;
+    s += '<rect x="' + (X(idx)-bw/2).toFixed(1) + '" y="' + YR(v).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (T+plotH-YR(v)).toFixed(1) + '" fill="#3F7FB5" opacity="' + (future?0.45:0.8) + '" rx="1"/>';
+  });
+  // discharge lines (solid past / dashed forecast)
+  var ptsPast = [], ptsFcst = [];
+  dates.forEach(function(ds, idx){
+    var v = discMap[ds];
+    if(v == null) return;
+    var p = X(idx).toFixed(1) + ',' + YD(v).toFixed(1);
+    if(idx <= 5) ptsPast.push(p);
+    if(idx >= 5) ptsFcst.push(p);
+  });
+  if(ptsPast.length) s += '<polyline points="' + ptsPast.join(' ') + '" fill="none" stroke="#1E6E7A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  if(ptsFcst.length) s += '<polyline points="' + ptsFcst.join(' ') + '" fill="none" stroke="#1E6E7A" stroke-width="2" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>';
+  dates.forEach(function(ds, idx){
+    var v = discMap[ds];
+    if(v == null) return;
+    s += '<circle cx="' + X(idx).toFixed(1) + '" cy="' + YD(v).toFixed(1) + '" r="2" fill="#1E6E7A"/>';
+  });
+  // today marker
+  s += '<line x1="' + X(5).toFixed(1) + '" y1="' + T + '" x2="' + X(5).toFixed(1) + '" y2="' + (T+plotH) + '" stroke="rgba(18,38,46,0.35)" stroke-width="1" stroke-dasharray="3 3"/>';
+  // date labels
+  [0, 2, 5, 7, 10].forEach(function(idx){
+    var label = idx === 5 ? 'Today' : dateLabel(dates[idx]);
+    s += '<text x="' + X(idx).toFixed(1) + '" y="' + (T+plotH+13) + '" text-anchor="middle" font-size="7.5" fill="' + (idx===5 ? '#12262E' : '#4C6470') + '" font-weight="' + (idx===5 ? '600' : '400') + '" font-family="JetBrains Mono">' + label + '</text>';
+  });
+  // legend
+  s += '<line x1="' + L + '" y1="10" x2="' + (L+14) + '" y2="10" stroke="#1E6E7A" stroke-width="2"/>';
+  s += '<text x="' + (L+18) + '" y="13" font-size="8" fill="#12262E" font-family="JetBrains Mono">river m³/s (left)</text>';
+  s += '<rect x="' + (L+plotW-104) + '" y="5" width="8" height="8" fill="#3F7FB5" opacity="0.8" rx="1"/>';
+  s += '<text x="' + (L+plotW-92) + '" y="13" font-size="8" fill="#12262E" font-family="JetBrains Mono">rain mm/day (right)</text>';
+
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="River discharge versus rain chart">' + s + '</svg>';
+}
+
+
+/* ============ Rendering ============ */
+function renderGauge(){
+  var scores = state.locations.map(function(l){ return l._score || 0; });
+  var worst = scores.length ? Math.max.apply(null, scores) : 0;
+  var band = bandFromScore(worst);
+
+  var pill = document.getElementById('overallStatus');
+  pill.className = 'status-pill status-' + band;
+  document.getElementById('overallStatusText').textContent = state.locations.length ? BAND_LABEL[band] : 'No locations';
+  document.getElementById('gaugeScoreLabel').textContent = Math.round(worst) + ' / 100';
+  document.getElementById('gaugeMarker').style.left = worst + '%';
+
+  var ticks = document.querySelectorAll('.gauge-tick');
+  ticks.forEach(function(t){ t.classList.remove('active'); });
+  var order = ['normal','watch','warning','severe'];
+  ticks[order.indexOf(band)].classList.add('active');
+
+  syncMarkers();
+}
+
+function trendIcon(pct){
+  if(pct == null) return '';
+  if(pct >= 0.08) return '<svg class="trend-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 17l6-6 4 4 6-8"/><path d="M14 7h6v6"/></svg>';
+  if(pct <= -0.08) return '<svg class="trend-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 7l6 6 4-4 6 8"/><path d="M14 17h6v-6"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 12h16"/></svg>';
+}
+
+function renderDetail(loc){
+  var d = dangerAssessment(loc, state.thresholds);
+  var dt = loc.dischargeTrend;
+  var h = '<div class="loc-detail">';
+  h += '<div class="danger-banner danger-' + d.level + '"><span class="db-level">' + d.level + '</span><span>' + d.headline + '<br><span style="opacity:0.75">' + d.reasons.join(' · ') + '</span></span></div>';
+  h += '<div class="detail-grid">';
+  h += '<div class="detail-cell"><span class="v">' + (dt ? fmtCms(dt.today) : '—') + '</span><span class="l">river now · m³/s</span></div>';
+  h += '<div class="detail-cell"><span class="v">' + (dt ? (dt.pctChange>=0?'+':'') + Math.round(dt.pctChange*100) + '%' : '—') + '</span><span class="l">vs 7-day river avg</span></div>';
+  h += '<div class="detail-cell"><span class="v">' + (loc.peakFcstDisc ? fmtCms(loc.peakFcstDisc.v) + ' <small>' + dateLabel(loc.peakFcstDisc.date) + '</small>' : '—') + '</span><span class="l">peak fcst river · m³/s</span></div>';
+  h += '<div class="detail-cell"><span class="v">' + (loc.peakRate != null ? fmt1(loc.peakRate) + ' <small>' + (loc.peakRateTime || '') + '</small>' : '—') + '</span><span class="l">max rain rate · mm/h 24h</span></div>';
+  h += '</div>';
+  if((loc.dischargeSeries && loc.dischargeSeries.length) || (loc.dailyRain && loc.dailyRain.length)){
+    h += '<div class="chart-wrap">' + renderChart(loc) +
+      '<div class="chart-cap">Dashed = model forecast · river line vs daily rain, 5 days back to 5 ahead</div></div>';
+  }
+  h += '<div class="detail-actions">';
+  h += '<button class="locate-btn" data-locate="' + loc.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button>';
+  h += '<span class="loc-updated">' + (loc._updated ? 'updated ' + fmtTime(loc._updated) : '') + (loc._cached ? ' · saved copy' : '') + '</span>';
+  h += '</div></div>';
+  return h;
+}
+
+function renderLocations(){
+  var wrap = document.getElementById('locations');
+  var empty = document.getElementById('emptyState');
+  wrap.innerHTML = '';
+  empty.style.display = state.locations.length ? 'none' : 'block';
+
+  state.locations.forEach(function(loc){
+    var isOpen = !!state.expanded[loc.id];
+    var card = document.createElement('div');
+    card.className = 'loc-card band-' + (loc._band || 'normal') + (isOpen ? ' open' : '') + (loc._cached ? ' stale' : '');
+    card.id = 'card-' + loc.id;
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+    var body = '';
+    if(loc._error){
+      body = '<div class="loc-error">' + loc._error + '</div>';
+    } else if(loc._score === undefined){
+      body = '<div class="loc-empty">Loading…</div>';
+    } else {
+      var discHtml = '';
+      if(loc.dischargeTrend){
+        discHtml = '<div class="discharge-trend">' + trendIcon(loc.dischargeTrend.pctChange) +
+          '<span>river discharge ' + (loc.dischargeTrend.pctChange>=0 ? '+' : '') + Math.round(loc.dischargeTrend.pctChange*100) + '% vs 7-day avg</span></div>';
+      }
+      body =
+        '<div class="loc-stats">' +
+          '<div class="stat"><span class="v">' + fmt1(loc.rainNow) + '</span><span class="l">mm now</span></div>' +
+          '<div class="stat"><span class="v">' + fmt1(loc.next6) + '</span><span class="l">mm / 6h</span></div>' +
+          '<div class="stat"><span class="v">' + fmt1(loc.next24) + '</span><span class="l">mm / 24h</span></div>' +
+        '</div>' +
+        (loc._wxError ? '<div class="loc-error" style="margin-top:7px">rain forecast unavailable — retrying automatically</div>' : '') +
+        discHtml +
+        '<div class="loc-updated">updated ' + (loc._updated ? fmtTime(loc._updated) : '—') + (loc._cached ? ' · saved copy' : '') + '</div>';
+      if(isOpen){
+        body += renderDetail(loc);
+      } else {
+        body += '<div class="loc-tap-hint">tap for river vs rain detail</div>';
+      }
+    }
+
+    card.innerHTML =
+      '<div class="loc-top">' +
+        '<div class="loc-name">' + escapeHtml(loc.name) +
+          (loc._band ? '<span class="loc-band-tag">' + BAND_LABEL[loc._band] + '</span>' : '') +
+        '</div>' +
+        '<div class="loc-actions">' +
+          '<button class="loc-chevron" title="River vs rain detail" aria-label="Toggle detail for ' + escapeHtml(loc.name) + '">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>' +
+          '</button>' +
+          '<button class="loc-remove" data-id="' + loc.id + '" title="Remove" aria-label="Remove ' + escapeHtml(loc.name) + '">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>' +
+          '</button>' +
+        '</div>' +
+      '</div>' + body;
+    wrap.appendChild(card);
+  });
+
+  wrap.querySelectorAll('.loc-remove').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var id = btn.getAttribute('data-id');
+      var loc = state.locations.find(function(l){return l.id===id;});
+      state.locations = state.locations.filter(function(l){ return l.id !== id; });
+      delete state.expanded[id];
+      saveConfig();
+      renderLocations();
+      renderGauge();
+      toast('Removed ' + (loc ? loc.name : 'location'));
+    });
+  });
+
+  wrap.querySelectorAll('.locate-btn').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var loc = state.locations.find(function(l){ return l.id === btn.getAttribute('data-locate'); });
+      if(!loc || !state.map) return;
+      state.map.setView([loc.lat, loc.lon], 11, { animate:true });
+      if(state.markers[loc.id]) state.markers[loc.id].openTooltip();
+      document.querySelector('.map-section').scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  });
+
+  wrap.querySelectorAll('.loc-card').forEach(function(card){
+    var id = card.id.replace('card-', '');
+    function toggle(){
+      state.expanded[id] = !state.expanded[id];
+      renderLocations();
+    }
+    card.addEventListener('click', toggle);
+    card.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); toggle(); }
+    });
+  });
+}
+
+function renderAll(){
+  document.getElementById('thWatch').value = state.thresholds.watch24;
+  document.getElementById('thWarning').value = state.thresholds.warning24;
+  document.getElementById('thSevere').value = state.thresholds.severe24;
+  document.getElementById('thSurge').value = state.thresholds.dischargeSurge;
+  renderLocations();
+  renderGauge();
+}
+
+/* ============ Add location ============ */
+function addLocation(loc){
+  if(state.locations.some(function(l){ return Math.abs(l.lat-loc.lat)<0.01 && Math.abs(l.lon-loc.lon)<0.01; })){
+    toast('Already watching a location there');
+    return;
+  }
+  state.locations.push(loc);
+  state.expanded[loc.id] = true;
+  saveConfig();
+  renderLocations();
+  renderGauge();
+  fitToMarkers();
+  fetchLocationData(loc).then(function(data){
+    var floodOk = !!(data.dischargeTrend || (data.dischargeSeries && data.dischargeSeries.length));
+    if(data.wxError && !floodOk){
+      loc._error = 'Could not reach data services';
+      renderLocations();
+      return;
+    }
+    Object.assign(loc, data);
+    var cls = classify(loc, state.thresholds);
+    loc._score = cls.score; loc._band = cls.band; loc._updated = new Date(); loc._cached = false;
+    loc._wxError = !!data.wxError;
+    writeCache();
+    renderLocations();
+    renderGauge();
+  }).catch(function(){
+    loc._error = 'Could not reach data services';
+    renderLocations();
+  });
+  toast('Added ' + loc.name);
+  closeAddPanel();
+}
+
+function searchPlaces(query){
+  var url = 'https://geocoding-api.open-meteo.com/v1/search?name=' + encodeURIComponent(query) + '&count=5&language=en&format=json';
+  return fetchJSON(url).then(function(data){ return data.results || []; });
+}
+
+/* ============ Panels ============ */
+function openAddPanel(){ document.getElementById('addPanel').classList.add('open'); document.getElementById('addToggle').setAttribute('aria-expanded','true'); }
+function closeAddPanel(){ document.getElementById('addPanel').classList.remove('open'); document.getElementById('addToggle').setAttribute('aria-expanded','false'); document.getElementById('searchResults').innerHTML=''; }
+
+/* ============ Wire up UI ============ */
+function wireUI(){
+  document.getElementById('addToggle').addEventListener('click', function(){
+    var panel = document.getElementById('addPanel');
+    panel.classList.contains('open') ? closeAddPanel() : openAddPanel();
+  });
+
+  document.getElementById('settingsToggle').addEventListener('click', function(){
+    var panel = document.getElementById('settingsPanel');
+    panel.classList.toggle('open');
+    document.getElementById('settingsToggle').setAttribute('aria-expanded', panel.classList.contains('open'));
+  });
+
+  document.getElementById('searchBtn').addEventListener('click', doSearch);
+  document.getElementById('searchInput').addEventListener('keydown', function(e){ if(e.key === 'Enter') doSearch(); });
+
+  function doSearch(){
+    var q = document.getElementById('searchInput').value.trim();
+    if(!q) return;
+    var results = document.getElementById('searchResults');
+    results.innerHTML = '<div class="loc-empty">Searching…</div>';
+    searchPlaces(q).then(function(list){
+      if(!list.length){ results.innerHTML = '<div class="loc-empty">No matches. Try a nearby bigger town.</div>'; return; }
+      results.innerHTML = '';
+      list.forEach(function(r){
+        var row = document.createElement('div');
+        row.className = 'search-result';
+        row.innerHTML = '<span>' + escapeHtml(r.name) + '<span class="sub">' + escapeHtml([r.admin1, r.country].filter(Boolean).join(', ')) + '</span></span>';
+        row.addEventListener('click', function(){
+          addLocation({ id: uid(), name: r.name, lat: r.latitude, lon: r.longitude });
+        });
+        results.appendChild(row);
+      });
+    }).catch(function(){ results.innerHTML = '<div class="loc-error">Search failed — check your connection.</div>'; });
+  }
+
+  document.getElementById('geoBtn').addEventListener('click', function(){
+    if(!navigator.geolocation){ toast('Geolocation not available'); return; }
+    toast('Locating…');
+    navigator.geolocation.getCurrentPosition(function(pos){
+      addLocation({ id: uid(), name: 'My location', lat: +pos.coords.latitude.toFixed(4), lon: +pos.coords.longitude.toFixed(4) });
+    }, function(){ toast('Could not get your location'); });
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click', refreshAll);
+
+  document.getElementById('layerToggle').addEventListener('click', function(){
+    state.radar.mode = state.radar.mode === 'radar' ? 'satellite' : 'radar';
+    document.getElementById('layerLabel').textContent = state.radar.mode === 'radar' ? 'Radar' : 'Satellite';
+    loadRadar();
+  });
+
+  document.getElementById('playToggle').addEventListener('click', function(){
+    state.radar.playing = !state.radar.playing;
+    document.getElementById('playLabel').textContent = state.radar.playing ? 'Play' : 'Paused';
+    document.getElementById('playIcon').innerHTML = state.radar.playing
+      ? '<polygon points="5,3 19,12 5,21"/>'
+      : '<rect x="5" y="4" width="5" height="16"/><rect x="14" y="4" width="5" height="16"/>';
+    startRadarLoop();
+  });
+
+  document.getElementById('saveThresh').addEventListener('click', function(){
+    state.thresholds.watch24 = parseFloat(document.getElementById('thWatch').value) || 0;
+    state.thresholds.warning24 = parseFloat(document.getElementById('thWarning').value) || 0;
+    state.thresholds.severe24 = parseFloat(document.getElementById('thSevere').value) || 0;
+    state.thresholds.dischargeSurge = parseFloat(document.getElementById('thSurge').value) || 0;
+    saveConfig();
+    state.locations.forEach(function(loc){
+      if(loc._score !== undefined){
+        var cls = classify(loc, state.thresholds);
+        loc._score = cls.score; loc._band = cls.band;
+      }
+    });
+    renderLocations();
+    renderGauge();
+    toast('Thresholds saved');
+  });
+
+  document.getElementById('resetThresh').addEventListener('click', function(){
+    state.thresholds = Object.assign({}, DEFAULT_THRESHOLDS);
+    document.getElementById('thWatch').value = state.thresholds.watch24;
+    document.getElementById('thWarning').value = state.thresholds.warning24;
+    document.getElementById('thSevere').value = state.thresholds.severe24;
+    document.getElementById('thSurge').value = state.thresholds.dischargeSurge;
+  });
+
+  document.getElementById('notifyToggle').addEventListener('change', function(e){
+    if(e.target.checked && typeof Notification !== 'undefined'){
+      Notification.requestPermission().then(function(perm){
+        state.notify = perm === 'granted';
+        e.target.checked = state.notify;
+        saveNotifyPref();
+        if(!state.notify) toast('Browser blocked notification permission');
+      });
+    } else {
+      state.notify = false;
+      saveNotifyPref();
+    }
+  });
+}
+
+/* ============ Clock ============ */
+function tickClock(){
+  document.getElementById('clock').textContent = new Date().toLocaleString([], { weekday:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+/* ============ Init ============ */
+function init(){
+  initMap();
+  wireUI();
+  tickClock();
+  setInterval(tickClock, 30000);
+  loadConfig();
+  loadRadar();
+  state.refreshTimer = setInterval(refreshAll, REFRESH_MS);
+  state.radarTimer = setInterval(loadRadar, RADAR_REFRESH_MS);
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden && Date.now() - state.lastDataRefresh > 5*60*1000){
+      refreshAll();
+      if(Date.now() - state.radar.lastLoad > RADAR_REFRESH_MS) loadRadar();
+    }
+  });
+}
+
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+})();
+
+</script>
+</body>
+</html>
