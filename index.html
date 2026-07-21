@@ -326,6 +326,46 @@
     .refresh-btn.spinning svg{animation:none;}
     .gauge-marker{transition:none;}
   }
+
+  /* ===== Public early-warning redesign ===== */
+  .public-summary{margin-top:10px;padding:12px;border-radius:5px;border:1px solid var(--line);background:linear-gradient(180deg,#fff,var(--paper));}
+  .public-summary h3{margin:0;font-family:'Space Grotesk';font-size:15px;line-height:1.25;}
+  .public-summary p{margin:5px 0 0;font-size:12px;line-height:1.5;color:var(--ink-soft);}
+  .public-summary .impact-time{margin-top:8px;font-family:'JetBrains Mono';font-size:10px;font-weight:600;color:var(--ink);}
+  .risk-trio{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0;}
+  .risk-box{min-width:0;padding:8px 7px;border-radius:4px;border:1px solid var(--line);background:#fff;}
+  .risk-box .risk-name{display:block;font-family:'JetBrains Mono';font-size:8px;line-height:1.25;text-transform:uppercase;letter-spacing:.045em;color:var(--ink-soft);}
+  .risk-box .risk-level{display:block;margin-top:4px;font-family:'Space Grotesk';font-size:13px;font-weight:700;}
+  .risk-box.normal{border-top:3px solid var(--gauge-normal);}
+  .risk-box.watch{border-top:3px solid var(--gauge-watch);}
+  .risk-box.warning{border-top:3px solid var(--gauge-warning);}
+  .risk-box.severe{border-top:3px solid var(--gauge-severe);background:rgba(178,51,69,.045);}
+  .cause-flow{display:grid;grid-template-columns:1fr 22px 1fr 22px 1fr;align-items:stretch;margin:10px 0;}
+  .cause-stage{padding:8px 6px;background:var(--mist);border-radius:4px;text-align:center;}
+  .cause-stage strong{display:block;font-family:'Space Grotesk';font-size:11px;}
+  .cause-stage span{display:block;margin-top:3px;font-size:9px;line-height:1.35;color:var(--ink-soft);}
+  .cause-arrow{display:flex;align-items:center;justify-content:center;color:var(--river-teal);font-weight:700;}
+  .plain-panel{margin:9px 0;padding:9px 10px;border-left:3px solid var(--river-teal);background:rgba(30,110,122,.06);font-size:11px;line-height:1.5;}
+  .plain-panel.action{border-left-color:var(--gauge-warning);background:rgba(201,154,46,.08);}
+  .plain-panel strong{font-family:'Space Grotesk';font-size:11px;}
+  .indicator-list{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:9px 0;}
+  .indicator{padding:7px 8px;border-radius:4px;background:var(--mist);font-family:'JetBrains Mono';}
+  .indicator .iv{display:block;font-size:11px;font-weight:600;}
+  .indicator .il{display:block;margin-top:2px;font-size:8px;line-height:1.3;text-transform:uppercase;color:var(--ink-soft);}
+  .danger-chart{background:#fff;border:1px solid var(--line);border-radius:4px;padding:6px 4px 2px;}
+  .danger-chart-note{padding:4px 6px 7px;font-size:9px;line-height:1.45;color:var(--ink-soft);}
+  .expert-details{margin-top:9px;border-top:1px solid var(--line);padding-top:8px;}
+  .expert-details summary{cursor:pointer;font-family:'JetBrains Mono';font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--river-teal);}
+  .model-note{margin-top:7px;font-size:9px;line-height:1.45;color:var(--ink-soft);}
+  .loc-card .loc-summary-line{margin-top:8px;font-size:11px;line-height:1.45;color:var(--ink-soft);}
+  .loc-card .loc-summary-line strong{color:var(--ink);}
+  @media(max-width:390px){
+    .risk-trio{grid-template-columns:1fr;}
+    .cause-flow{grid-template-columns:1fr;}
+    .cause-arrow{height:18px;transform:rotate(90deg);}
+    .indicator-list{grid-template-columns:1fr;}
+  }
+
 </style>
 </head>
 <body>
@@ -831,7 +871,7 @@
     if(BAND_RANK[loc._band] > BAND_RANK[prevBand] && BAND_RANK[loc._band] >= BAND_RANK.warning){
       try{
         new Notification('Rising risk: ' + loc.name, {
-          body: BAND_LABEL[loc._band] + ' — ' + fmt1(loc.next24) + ' mm expected in next 24h.'
+          body: publicCardSummary(loc).replace(/<[^>]+>/g,'') + ' ' + fmt1(loc.next24) + ' mm rain expected in the next 24 h.'
         });
       }catch(e){}
     }
@@ -980,6 +1020,77 @@ function fitToMarkers(){
   state.map.fitBounds(group.getBounds().pad(0.3), { maxZoom: 11 });
 }
 
+
+/* ============ Public warning interpretation ============ */
+function clamp(v,min,max){ return Math.max(min,Math.min(max,v)); }
+function levelFromScore(score){ if(score>=80)return 'severe'; if(score>=55)return 'warning'; if(score>=30)return 'watch'; return 'normal'; }
+function levelWord(level){ return {normal:'Low',watch:'Moderate',warning:'High',severe:'Severe'}[level] || 'Unknown'; }
+
+
+function rainRiverCoupling(loc){
+  if(!loc.dailyRain || !loc.dischargeSeries || !loc.todayStr) return null;
+  var discMap = {};
+  loc.dischargeSeries.forEach(function(d){ if(d.v != null) discMap[d.date] = d.v; });
+  var totRain = 0, totRise = 0, samples = 0;
+  loc.dailyRain.forEach(function(d){
+    if(d.date >= loc.todayStr) return;               // observed days only
+    var next = shiftDate(d.date, 1);
+    var v0 = discMap[d.date], v1 = discMap[next];
+    if(v0 > 0 && v1 != null){
+      samples++;
+      if(d.mm > 0.5){ totRain += d.mm; totRise += Math.max((v1 - v0) / v0 * 100, 0); }
+    }
+  });
+  if(samples < 3 || totRain < 2) return null;
+  return { perTenMm: (totRise / totRain) * 10, samples: samples };
+}
+
+function publicRiskAnalysis(loc, th){
+  var rain24=Number(loc.next24||0), rain6=Number(loc.next6||0), peak=Number(loc.peakRate||0);
+  var pct=loc.dischargeTrend&&loc.dischargeTrend.pctChange!=null?loc.dischargeTrend.pctChange*100:0;
+  var peakForecastRise=0;
+  if(loc.dischargeTrend&&loc.peakFcstDisc&&loc.dischargeTrend.today>0){
+    peakForecastRise=((loc.peakFcstDisc.v-loc.dischargeTrend.today)/loc.dischargeTrend.today)*100;
+  }
+  var flashScore=clamp((peak/Math.max(th.rateExtreme,1))*55+(rain6/Math.max(th.warning24*.35,1))*30+(rain24/Math.max(th.severe24,1))*15,0,100);
+  var waterlogScore=clamp((rain6/Math.max(th.watch24*1.5,1))*45+(peak/Math.max(th.rateHeavy*1.4,1))*30+(rain24/Math.max(th.warning24,1))*25,0,100);
+  var riverScore=clamp(riskScore(rain24,th)*.38+clamp(Math.max(pct,0)/Math.max(th.dischargeSurge,1)*100,0,100)*.27+clamp(Math.max(peakForecastRise,0)/Math.max(th.dischargeSurge,1)*100,0,100)*.35,0,100);
+  var rainPressure=clamp((rain24/Math.max(th.warning24,1))*55+(rain6/Math.max(th.watch24,1))*25+(peak/Math.max(th.rateHeavy,1))*20,0,100);
+  var influence=clamp(30+rainPressure*.42+Math.max(peakForecastRise,0)*.25,25,90);
+  var confidence=(loc._wxError||!loc.dischargeTrend)?'Limited':(loc.dailyRain&&loc.dischargeSeries?'Moderate':'Limited');
+  var lagMin=peak>=th.rateExtreme?3:peak>=th.rateHeavy?5:8;
+  var lagMax=peak>=th.rateExtreme?10:peak>=th.rateHeavy?14:20;
+  var riverLevel=levelFromScore(riverScore), flashLevel=levelFromScore(flashScore), waterlogLevel=levelFromScore(waterlogScore);
+  var worst=[riverLevel,flashLevel,waterlogLevel].sort(function(a,b){return BAND_RANK[b]-BAND_RANK[a];})[0];
+  var headline=worst==='severe'?'Dangerous flooding conditions may develop quickly.':worst==='warning'?'Flooding is possible and conditions may worsen.':worst==='watch'?'Rain and river conditions need close watching.':'No strong flood signal is visible at present.';
+  var why=[];
+  if(peak>=th.rateExtreme)why.push('a very intense rain burst is forecast'); else if(peak>=th.rateHeavy)why.push('heavy short-duration rain is forecast');
+  if(rain24>=th.warning24)why.push('substantial rain is expected over 24 hours'); else if(rain24>=th.watch24)why.push('meaningful rain is expected over 24 hours');
+  if(peakForecastRise>=15)why.push('the river model shows a notable rise'); else if(pct>=8)why.push('river discharge is already above its recent average');
+  if(!why.length)why.push('rain and river indicators remain near their normal range');
+  var meaning=(flashLevel==='severe'||waterlogLevel==='severe')?'Low-lying roads, drains and small streams may become dangerous before the main river responds.':(riverLevel==='warning'||riverLevel==='severe')?'River-adjacent and low-lying areas should prepare for a possible rise after upstream rainfall moves downstream.':(waterlogLevel==='watch'||flashLevel==='watch')?'Local waterlogging can begin even if the Brahmaputra itself is not yet at a dangerous level.':'Continue normal caution and check again if rainfall intensifies.';
+  var action=worst==='severe'?'Avoid flowing water and low-lying routes. Move essential items upward and follow ASDMA or district instructions.':worst==='warning'?'Keep phones charged, protect documents and medicines, and identify a safe elevated route.':worst==='watch'?'Monitor official alerts, avoid riverbanks during heavy rain and check conditions again within a few hours.':'No special action is indicated beyond routine weather awareness.';
+    var coup = rainRiverCoupling(loc);
+  var rainShare = null, predictedRisePct = null;
+  if(coup){
+    predictedRisePct = coup.perTenMm * (rain24 / 10);
+    if(peakForecastRise > 1){
+      rainShare = Math.round(clamp(predictedRisePct / peakForecastRise * 100, 5, 100));
+    }
+  }
+  if(coup && coup.perTenMm >= 1){
+    why.push('recent local data shows roughly +' + (Math.round(coup.perTenMm*10)/10) + '% river rise per 10 mm of rain');
+  }
+  return {riverScore:riverScore,flashScore:flashScore,waterlogScore:waterlogScore,riverLevel:riverLevel,flashLevel:flashLevel,waterlogLevel:waterlogLevel,rainPressure:rainPressure,influenceLow:Math.max(20,Math.round(influence-8)),influenceHigh:Math.min(95,Math.round(influence+8)),coupling:coup,rainShare:rainShare,predictedRisePct:predictedRisePct,confidence:confidence,lagMin:lagMin,lagMax:lagMax,peakForecastRise:peakForecastRise,headline:headline,why:why,meaning:meaning,action:action,worst:worst};
+}
+function publicCardSummary(loc){
+  var a=publicRiskAnalysis(loc,state.thresholds);
+  if(a.worst==='severe')return '<strong>Act now:</strong> dangerous flooding conditions may develop quickly.';
+  if(a.worst==='warning')return '<strong>Prepare:</strong> flooding is possible as rain and river conditions worsen.';
+  if(a.worst==='watch')return '<strong>Watch closely:</strong> local flooding or a later river rise is possible.';
+  return '<strong>Currently low risk:</strong> no strong flood signal is visible.';
+}
+
 /* ============ Danger assessment ============ */
 function dangerAssessment(loc, th){
   var reasons = [];
@@ -1095,6 +1206,112 @@ function renderChart(loc){
 }
 
 
+function renderPublicDangerChart(loc){
+  var a = publicRiskAnalysis(loc, state.thresholds), th = state.thresholds;
+  var W=340, H=170, L=34, R=10, T=14, B=27, plotW=W-L-R, plotH=H-T-B;
+  var anchorDate = loc.todayStr || new Date().toISOString().slice(0,10);
+  var dates = [], i;
+  for(i=-5; i<=5; i++) dates.push(shiftDate(anchorDate, i));
+
+  var rainMap = {}, discMap = {}, rainMax = 10;
+  (loc.dailyRain || []).forEach(function(d){ rainMap[d.date] = d.mm; if(d.mm > rainMax) rainMax = d.mm; });
+  (loc.dischargeSeries || []).forEach(function(d){ if(d.v != null) discMap[d.date] = d.v; });
+
+  // baseline = the river's own recent normal
+  var base = (loc.dischargeTrend && loc.dischargeTrend.avg7 > 0) ? loc.dischargeTrend.avg7 : null;
+  if(base == null){
+    var past = dates.slice(0,5).map(function(ds){ return discMap[ds]; }).filter(function(v){ return v != null; });
+    if(past.length) base = past.reduce(function(x,y){return x+y;},0) / past.length;
+  }
+  if(base == null || !base) return '<div class="danger-chart"><div class="danger-chart-note">Not enough river data yet to draw the flood-stress timeline. It will appear after the next data refresh.</div></div>';
+
+  var surge = Math.max(th.dischargeSurge, 5) / 100;   // e.g. 0.40
+  // map discharge ratio (v/base) onto a 0-100 flood-stress scale
+  function stress(v){
+    var r = v / base;
+    var cp = [[0.6,5],[1.0,20],[1+surge*0.4,30],[1+surge,55],[1+surge*2,80],[1+surge*3,100]];
+    if(r <= cp[0][0]) return cp[0][1] * (r / cp[0][0]);
+    for(var k=0;k<cp.length-1;k++){
+      if(r <= cp[k+1][0]){
+        var t = (r - cp[k][0]) / (cp[k+1][0] - cp[k][0]);
+        return cp[k][1] + t * (cp[k+1][1] - cp[k][1]);
+      }
+    }
+    return 100;
+  }
+  var step = plotW / dates.length;
+  function X(idx){ return L + (idx + 0.5) * step; }
+  function Y(v){ return T + plotH - (v/100) * plotH; }
+  function YR(v){ return T + plotH - (v / (rainMax*1.15)) * plotH * 0.55; }
+
+  var s = '';
+  // guidance bands (relative to this river's own normal)
+  s += '<rect x="'+L+'" y="'+Y(100)+'" width="'+plotW+'" height="'+(Y(80)-Y(100))+'" fill="rgba(178,51,69,.16)"/>';
+  s += '<rect x="'+L+'" y="'+Y(80)+'" width="'+plotW+'" height="'+(Y(55)-Y(80))+'" fill="rgba(193,89,28,.12)"/>';
+  s += '<rect x="'+L+'" y="'+Y(55)+'" width="'+plotW+'" height="'+(Y(30)-Y(55))+'" fill="rgba(201,154,46,.12)"/>';
+  [30,55,80].forEach(function(v){ s += '<line x1="'+L+'" y1="'+Y(v)+'" x2="'+(L+plotW)+'" y2="'+Y(v)+'" stroke="rgba(18,38,46,.2)" stroke-dasharray="3 3"/>'; });
+  s += '<text x="2" y="'+(Y(90)+3)+'" font-size="7" fill="#8e2738" font-family="JetBrains Mono">SEVERE</text>';
+  s += '<text x="2" y="'+(Y(67)+3)+'" font-size="7" fill="#8a4313" font-family="JetBrains Mono">DANGER</text>';
+  s += '<text x="2" y="'+(Y(42)+3)+'" font-size="7" fill="#7c6118" font-family="JetBrains Mono">WATCH</text>';
+
+  // real rain bars (bottom layer)
+  var bw = step * 0.5;
+  dates.forEach(function(ds, idx){
+    var v = rainMap[ds];
+    if(v == null || v <= 0) return;
+    var y = YR(v);
+    s += '<rect x="'+(X(idx)-bw/2).toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+(T+plotH-y).toFixed(1)+'" fill="#3F7FB5" opacity="'+(idx>5?0.4:0.6)+'" rx="1"/>';
+  });
+
+  // real flood-stress line from actual discharge
+  var pts = [];
+  dates.forEach(function(ds, idx){
+    var v = discMap[ds];
+    if(v == null) return;
+    pts.push({ idx: idx, sv: Math.max(0, Math.min(100, stress(v))) });
+  });
+  if(pts.length >= 2){
+    // red fill under the line wherever it is in danger territory
+    var dangerPts = pts.filter(function(p){ return p.sv >= 55; });
+    if(dangerPts.length){
+      var dPoly = dangerPts.map(function(p){ return X(p.idx).toFixed(1)+','+Y(p.sv).toFixed(1); });
+      dPoly.push(X(dangerPts[dangerPts.length-1].idx).toFixed(1)+','+Y(55).toFixed(1));
+      dPoly.push(X(dangerPts[0].idx).toFixed(1)+','+Y(55).toFixed(1));
+      s += '<polygon points="'+dPoly.join(' ')+'" fill="rgba(178,51,69,.28)"/>';
+    }
+    var past2 = pts.filter(function(p){ return p.idx <= 5; }).map(function(p){ return X(p.idx).toFixed(1)+','+Y(p.sv).toFixed(1); });
+    var fcst = pts.filter(function(p){ return p.idx >= 5; }).map(function(p){ return X(p.idx).toFixed(1)+','+Y(p.sv).toFixed(1); });
+    if(past2.length > 1) s += '<polyline points="'+past2.join(' ')+'" fill="none" stroke="#1E6E7A" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>';
+    if(fcst.length > 1) s += '<polyline points="'+fcst.join(' ')+'" fill="none" stroke="#1E6E7A" stroke-width="3" stroke-dasharray="5 4" stroke-linecap="round" stroke-linejoin="round"/>';
+    pts.forEach(function(p){
+      var c = p.sv >= 80 ? '#B23345' : p.sv >= 55 ? '#C1591C' : p.sv >= 30 ? '#C99A2E' : '#1E6E7A';
+      s += '<circle cx="'+X(p.idx).toFixed(1)+'" cy="'+Y(p.sv).toFixed(1)+'" r="'+(p.idx===5?3.2:2.4)+'" fill="'+c+'"/>';
+    });
+  }
+
+  // markers: heaviest forecast rain day and forecast river peak (real lag)
+  var rainPeakIdx = null, rainPeakVal = 0;
+  dates.forEach(function(ds, idx){ if(idx >= 5 && rainMap[ds] != null && rainMap[ds] > rainPeakVal){ rainPeakVal = rainMap[ds]; rainPeakIdx = idx; } });
+  var discPeakIdx = null;
+  if(loc.peakFcstDisc){ var pi = dates.indexOf(loc.peakFcstDisc.date); if(pi >= 0) discPeakIdx = pi; }
+  if(rainPeakIdx != null && rainPeakVal > 1) s += '<text x="'+X(rainPeakIdx).toFixed(1)+'" y="'+(T+6)+'" text-anchor="middle" font-size="7" fill="#3F7FB5" font-family="JetBrains Mono">RAIN PEAK</text>';
+  if(discPeakIdx != null) s += '<text x="'+X(discPeakIdx).toFixed(1)+'" y="'+(T+(discPeakIdx===rainPeakIdx?14:6))+'" text-anchor="middle" font-size="7" fill="#8e2738" font-family="JetBrains Mono">RIVER PEAK</text>';
+
+  // today marker + labels
+  s += '<line x1="'+X(5).toFixed(1)+'" y1="'+T+'" x2="'+X(5).toFixed(1)+'" y2="'+(T+plotH)+'" stroke="rgba(18,38,46,.4)" stroke-dasharray="3 3"/>';
+  [0,5,10].forEach(function(idx){
+    var lbl = idx === 5 ? 'TODAY' : dateLabel(dates[idx]);
+    s += '<text x="'+X(idx).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" font-size="7.5" fill="'+(idx===5?'#12262E':'#4C6470')+'" font-family="JetBrains Mono">'+lbl+'</text>';
+  });
+
+  var lagNote = '';
+  if(rainPeakIdx != null && discPeakIdx != null && rainPeakVal > 1){
+    var lagDays = discPeakIdx - rainPeakIdx;
+    lagNote = lagDays > 0 ? ' The river peak is expected about ' + lagDays + ' day' + (lagDays>1?'s':'') + ' after the heaviest rain.'
+            : lagDays === 0 ? ' The heaviest rain and the river peak fall on the same day — respond early.' : '';
+  }
+  return '<div class="danger-chart"><svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Flood stress timeline from real rain and river data">'+s+'</svg><div class="danger-chart-note">Line = actual river flow compared with its own recent normal (solid past, dashed forecast). Blue bars = real daily rain. Red shading marks danger territory relative to this river\u2019s normal \u2014 guidance bands, not official gauge levels.'+lagNote+'</div></div>';
+}
 /* ============ Rendering ============ */
 function renderGauge(){
   var scores = state.locations.map(function(l){ return l._score || 0; });
@@ -1123,24 +1340,17 @@ function trendIcon(pct){
 }
 
 function renderDetail(loc){
-  var d = dangerAssessment(loc, state.thresholds);
-  var dt = loc.dischargeTrend;
-  var h = '<div class="loc-detail">';
-  h += '<div class="danger-banner danger-' + d.level + '"><span class="db-level">' + d.level + '</span><span>' + d.headline + '<br><span style="opacity:0.75">' + d.reasons.join(' · ') + '</span></span></div>';
-  h += '<div class="detail-grid">';
-  h += '<div class="detail-cell"><span class="v">' + (dt ? fmtCms(dt.today) : '—') + '</span><span class="l">river now · m³/s</span></div>';
-  h += '<div class="detail-cell"><span class="v">' + (dt ? (dt.pctChange>=0?'+':'') + Math.round(dt.pctChange*100) + '%' : '—') + '</span><span class="l">vs 7-day river avg</span></div>';
-  h += '<div class="detail-cell"><span class="v">' + (loc.peakFcstDisc ? fmtCms(loc.peakFcstDisc.v) + ' <small>' + dateLabel(loc.peakFcstDisc.date) + '</small>' : '—') + '</span><span class="l">peak fcst river · m³/s</span></div>';
-  h += '<div class="detail-cell"><span class="v">' + (loc.peakRate != null ? fmt1(loc.peakRate) + ' <small>' + (loc.peakRateTime || '') + '</small>' : '—') + '</span><span class="l">max rain rate · mm/h 24h</span></div>';
-  h += '</div>';
-  if((loc.dischargeSeries && loc.dischargeSeries.length) || (loc.dailyRain && loc.dailyRain.length)){
-    h += '<div class="chart-wrap">' + renderChart(loc) +
-      '<div class="chart-cap">Dashed = model forecast · river line vs daily rain, 5 days back to 5 ahead</div></div>';
-  }
-  h += '<div class="detail-actions">';
-  h += '<button class="locate-btn" data-locate="' + loc.id + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button>';
-  h += '<span class="loc-updated">' + (loc._updated ? 'updated ' + fmtTime(loc._updated) : '') + (loc._cached ? ' · saved copy' : '') + '</span>';
-  h += '</div></div>';
+  var a=publicRiskAnalysis(loc,state.thresholds),dt=loc.dischargeTrend,h='<div class="loc-detail">';
+  h+='<div class="public-summary"><h3>'+a.headline+'</h3><p>'+a.why.join('; ')+'.</p><div class="impact-time">Possible local/river response: about '+a.lagMin+'–'+a.lagMax+' hours after the strongest rainfall</div></div>';
+  h+='<div class="risk-trio"><div class="risk-box '+a.riverLevel+'"><span class="risk-name">River flood</span><span class="risk-level">'+levelWord(a.riverLevel)+'</span></div><div class="risk-box '+a.flashLevel+'"><span class="risk-name">Sudden / flash flood</span><span class="risk-level">'+levelWord(a.flashLevel)+'</span></div><div class="risk-box '+a.waterlogLevel+'"><span class="risk-name">Local waterlogging</span><span class="risk-level">'+levelWord(a.waterlogLevel)+'</span></div></div>';
+  h+='<div class="cause-flow"><div class="cause-stage"><strong>Rain pressure</strong><span>'+Math.round(a.rainPressure)+'/100 · '+fmt1(loc.next24)+' mm forecast</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>River response</strong><span>'+(a.peakForecastRise?(a.peakForecastRise>=0?'+':'')+Math.round(a.peakForecastRise)+'% forecast peak':'model trend limited')+'</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>Local impact</strong><span>'+levelWord(a.worst)+' combined concern</span></div></div>';
+  h+=renderPublicDangerChart(loc);
+  h+='<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure proxy</span></div><div class="indicator"><span class="iv">'+(a.rainShare!=null?'~'+a.rainShare:a.influenceLow+'–'+a.influenceHigh)+'%</span><span class="il">'+(a.rainShare!=null?'Share of forecast river rise explained by rain (recent local data)':'Estimated rainfall influence (model heuristic)')+'</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs recent 7-day average</span></div><div class="indicator"><span class="iv">'+a.confidence+'</span><span class="il">Model interpretation confidence</span></div></div>';
+  h+='<div class="plain-panel"><strong>What this means</strong><br>'+a.meaning+'</div><div class="plain-panel action"><strong>What to do now</strong><br>'+a.action+'</div>';
+  h+='<details class="expert-details"><summary>View scientific data and original graph</summary><div class="detail-grid" style="margin-top:9px"><div class="detail-cell"><span class="v">'+(dt?fmtCms(dt.today):'—')+'</span><span class="l">river now · m³/s</span></div><div class="detail-cell"><span class="v">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="l">vs 7-day river avg</span></div><div class="detail-cell"><span class="v">'+(loc.peakFcstDisc?fmtCms(loc.peakFcstDisc.v)+' <small>'+dateLabel(loc.peakFcstDisc.date)+'</small>':'—')+'</span><span class="l">peak fcst river · m³/s</span></div><div class="detail-cell"><span class="v">'+(loc.peakRate!=null?fmt1(loc.peakRate)+' <small>'+(loc.peakRateTime||'')+'</small>':'—')+'</span><span class="l">max rain rate · mm/h 24h</span></div></div>';
+  if((loc.dischargeSeries&&loc.dischargeSeries.length)||(loc.dailyRain&&loc.dailyRain.length)){h+='<div class="chart-wrap">'+renderChart(loc)+'<div class="chart-cap">Dashed = model forecast · river line versus daily rain, five days back to five days ahead</div></div>';}
+  h+='<div class="model-note">The rainfall-influence percentage is an explainable model estimate, not a direct conversion of rain into river discharge. Actual response also depends on catchment rainfall, soil saturation, tributaries, terrain, drainage and river travel time. Official CWC/ASDMA thresholds take priority.</div></details>';
+  h+='<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+(loc._cached?' · saved copy':'')+'</span></div></div>';
   return h;
 }
 
@@ -1182,7 +1392,7 @@ function renderLocations(){
       if(isOpen){
         body += renderDetail(loc);
       } else {
-        body += '<div class="loc-tap-hint">tap for river vs rain detail</div>';
+        body += '<div class="loc-summary-line">' + publicCardSummary(loc) + '</div>' + '<div class="loc-tap-hint">tap for simple flood explanation</div>';
       }
     }
 
