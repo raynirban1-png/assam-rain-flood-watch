@@ -10,6 +10,12 @@
 <meta property="og:description" content="Live rain, river discharge and radar for the Brahmaputra basin. Tap a location for river-vs-rain detail and danger level.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%231E6E7A' d='M16 2C16 2 5 15.4 5 22a11 11 0 0 0 22 0C27 15.4 16 2 16 2z'/%3E%3Cpath fill='%2358A0AA' d='M12 22a4 4 0 0 0 8 0c0-2-4-6.5-4-6.5S12 20 12 22z'/%3E%3C/svg%3E">
+<link rel="manifest" href="./manifest.webmanifest">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flood Watch">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -299,6 +305,19 @@
   }
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
+  .install-banner{
+    position:fixed;bottom:14px;left:50%;transform:translateX(-50%) translateY(90px);
+    background:var(--deep-water);color:var(--mist);border-radius:10px;padding:10px 12px;
+    display:flex;align-items:center;gap:10px;z-index:110;
+    box-shadow:0 6px 24px rgba(14,42,61,0.35), 0 0 0 1px rgba(238,243,241,0.08);
+    transition:transform 0.3s ease;max-width:92vw;
+  }
+  .install-banner.show{transform:translateX(-50%) translateY(0);}
+  .install-banner .ib-text{font-size:12px;line-height:1.35;font-weight:500;}
+  .install-banner .ib-text small{display:block;font-size:10px;color:rgba(238,243,241,0.6);font-weight:400;margin-top:1px;}
+  .install-banner .ib-btn{background:var(--river-teal-light);border:none;color:var(--deep-water);font-weight:600;font-size:12px;border-radius:100px;padding:6px 14px;cursor:pointer;white-space:nowrap;}
+  .install-banner .ib-close{background:none;border:none;color:rgba(238,243,241,0.55);cursor:pointer;padding:4px;font-size:13px;line-height:1;}
+
   .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
   :focus-visible{outline:2px solid var(--river-teal);outline-offset:2px;}
 
@@ -440,6 +459,12 @@
     Rain forecasts from Open-Meteo (GFS/ICON models). River discharge from the Open-Meteo Flood API (GloFAS). Radar &amp; satellite mosaic from RainViewer. These are global models used as an early indicator — <strong>not a substitute for official bulletins</strong>. In an emergency call <a href="tel:112">112</a> or your district control room <a href="tel:1077">1077</a>; follow <a href="https://asdma.assam.gov.in/" target="_blank" rel="noopener">ASDMA</a> and <a href="https://ffs.india-water.gov.in/" target="_blank" rel="noopener">Central Water Commission</a> flood forecasts. Data auto-refreshes every 10 minutes.
   </footer>
 
+</div>
+
+<div class="install-banner" id="installBanner" role="dialog" aria-label="Install app">
+  <span class="ib-text" id="installText">Install Flood Watch<small>faster access, opens like an app</small></span>
+  <button class="ib-btn" id="installBtn">Install</button>
+  <button class="ib-close" id="installDismiss" aria-label="Dismiss">&#10005;</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1399,6 +1424,65 @@ if(document.readyState === 'loading'){
 }
 })();
 
+</script>
+<script>
+/* ============ PWA: service worker + install prompt ============ */
+(function(){
+  var deferred = null;
+  var banner = document.getElementById('installBanner');
+  var btn = document.getElementById('installBtn');
+  var dismissBtn = document.getElementById('installDismiss');
+  var text = document.getElementById('installText');
+  var LS_KEY = 'arfw-install-dismissed';
+
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){
+      navigator.serviceWorker.register('./sw.js').catch(function(){});
+    });
+  }
+
+  function dismissed(){
+    try{ return localStorage.getItem(LS_KEY) === '1'; }catch(e){ return false; }
+  }
+  function setDismissed(){
+    try{ localStorage.setItem(LS_KEY, '1'); }catch(e){}
+  }
+  function show(){ if(!dismissed()) banner.classList.add('show'); }
+  function hide(){ banner.classList.remove('show'); }
+
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+
+  window.addEventListener('beforeinstallprompt', function(e){
+    e.preventDefault();
+    deferred = e;
+    show();
+  });
+
+  btn.addEventListener('click', function(){
+    if(deferred){
+      deferred.prompt();
+      deferred.userChoice.then(function(){
+        deferred = null;
+        hide();
+      });
+    }
+  });
+
+  dismissBtn.addEventListener('click', function(){ hide(); setDismissed(); });
+
+  window.addEventListener('appinstalled', function(){
+    hide();
+    setDismissed();
+  });
+
+  // iOS has no install-prompt API — guide manually via Share → Add to Home Screen
+  if(isIOS && !standalone && !dismissed()){
+    text.innerHTML = 'Install Flood Watch<small>tap Share, then \u201CAdd to Home Screen\u201D</small>';
+    btn.style.display = 'none';
+    setTimeout(show, 4000);
+  }
+})();
 </script>
 </body>
 </html>
