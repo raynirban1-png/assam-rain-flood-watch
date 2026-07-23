@@ -40,6 +40,36 @@
     --radius:5px;
     --shadow:0 1px 2px rgba(14,42,61,0.06), 0 4px 14px rgba(14,42,61,0.06);
   }
+  /* ============ Map Expanding Water Markers ============ */
+.pulse-marker {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  box-shadow: 0 0 0 rgba(0,0,0,0.4);
+  animation: mapPulse 2s infinite cubic-bezier(0.66, 0, 0, 1);
+  border: 2px solid #fff;
+}
+.pulse-normal  { background: var(--gauge-normal); box-shadow: 0 0 0 0 rgba(47, 143, 91, 0.7); }
+.pulse-watch   { background: var(--gauge-watch); box-shadow: 0 0 0 0 rgba(201, 154, 46, 0.7); }
+.pulse-warning { background: var(--gauge-warning); box-shadow: 0 0 0 0 rgba(193, 89, 28, 0.7); animation-duration: 1.2s; }
+.pulse-severe  { background: var(--gauge-severe); box-shadow: 0 0 0 0 rgba(178, 51, 69, 0.8); animation-duration: 0.8s; }
+
+@keyframes mapPulse {
+  to { box-shadow: 0 0 0 20px rgba(0, 0, 0, 0); }
+}
+.custom-div-icon { background: transparent; border: none; }
+  /* NEW: Emergency Action Box Styling */
+.plain-panel.action.emergency {
+  background: rgba(178, 51, 69, 0.15);
+  border-left-color: var(--gauge-severe);
+  color: #8e2738;
+  animation: pulse-border 1.5s infinite;
+}
+@keyframes pulse-border {
+  0% { border-left-width: 3px; }
+  50% { border-left-width: 8px; }
+  100% { border-left-width: 3px; }
+}
 
 .critical-alert-box {
   background: rgba(178, 51, 69, 0.1);
@@ -987,9 +1017,25 @@ function startRadarLoop(){
 function initMap(){
   state.map = L.map('map', { zoomControl:false, attributionControl:false }).setView([26.05, 90.4], 8);
   L.control.zoom({ position:'bottomright' }).addTo(state.map);
+  
+  // Base Map Layer
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     subdomains:'abcd', maxZoom:19
   }).addTo(state.map);
+
+  // NEW: Add a Hydrological / River WMS Layer
+  // Note: This uses the open GloFAS WMS as an example to show live river anomalies
+  state.riverLayer = L.tileLayer.wms("https://global-flood-awareness-system.ecmwf.int/api/wms/", {
+      layers: 'flood_warning', // Shows river sections exceeding thresholds
+      format: 'image/png',
+      transparent: true,
+      opacity: 0.8,
+      attribution: 'Copernicus GloFAS'
+  });
+  
+  // Add it to the map by default
+  state.riverLayer.addTo(state.map);
+
   state.map.on('click', function(e){
     reverseAddAt(e.latlng.lat, e.latlng.lng);
   });
@@ -999,6 +1045,7 @@ function reverseAddAt(lat, lon){
   addLocation({ id: uid(), name: 'Pinned ' + lat.toFixed(2) + ', ' + lon.toFixed(2), lat: +lat.toFixed(4), lon: +lon.toFixed(4) });
 }
 
+/* ============ Map Markers (Animated) ============ */
 function syncMarkers(){
   Object.keys(state.markers).forEach(function(id){
     if(!state.locations.find(function(l){return l.id===id;})){
@@ -1006,20 +1053,29 @@ function syncMarkers(){
       delete state.markers[id];
     }
   });
+
   state.locations.forEach(function(loc){
-    var color = '#2F8F5B';
-    if(loc._band === 'watch') color = '#C99A2E';
-    else if(loc._band === 'warning') color = '#C1591C';
-    else if(loc._band === 'severe') color = '#B23345';
+    // Determine the current risk band for the pulsing animation
+    var band = loc._band || 'normal';
+    
+    // Create the animated HTML marker
+    var iconHtml = '<div class="pulse-marker pulse-' + band + '"></div>';
+    var customIcon = L.divIcon({ 
+      className: 'custom-div-icon', 
+      html: iconHtml, 
+      iconSize: [16, 16], 
+      iconAnchor: [8, 8] 
+    });
 
     if(state.markers[loc.id]){
+      // Update position and icon if it already exists
       state.markers[loc.id].setLatLng([loc.lat, loc.lon]);
-      state.markers[loc.id].setStyle({ fillColor: color });
+      state.markers[loc.id].setIcon(customIcon);
     } else {
-      var m = L.circleMarker([loc.lat, loc.lon], {
-        radius: 7, fillColor: color, color:'#fff', weight:2, fillOpacity:0.95
-      }).addTo(state.map);
-      m.bindTooltip(loc.name, { direction:'top', offset:[0,-6] });
+      // Create new marker
+      var m = L.marker([loc.lat, loc.lon], { icon: customIcon }).addTo(state.map);
+      m.bindTooltip(loc.name, { direction:'top', offset:[0,-8] });
+      
       (function(locRef, marker){
         marker.on('click', function(e){
           L.DomEvent.stopPropagation(e);
@@ -1029,15 +1085,16 @@ function syncMarkers(){
           if(el) el.scrollIntoView({ behavior:'smooth', block:'center' });
         });
       })(loc, m);
+      
       state.markers[loc.id] = m;
     }
   });
+
   if(!state.boundsFitted && state.locations.length){
     fitToMarkers();
     state.boundsFitted = true;
   }
 }
-
 function fitToMarkers(){
   var vals = Object.keys(state.markers).map(function(k){ return state.markers[k]; });
   if(!vals.length) return;
@@ -1212,12 +1269,19 @@ function drawInteractiveChart(loc) {
         {
           label: 'River Discharge (m³/s)',
           data: riverData,
-          borderColor: '#1E6E7A',
+          borderColor: '#1E6E7A', // Default color
           backgroundColor: 'rgba(30, 110, 122, 0.1)',
           yAxisID: 'yRiver',
           fill: true,
           tension: 0.4,
-          pointRadius: 3
+          pointRadius: 3,
+          // NEW: Change line color if it crosses the Warning Level (e.g., 6000)
+          segment: {
+            borderColor: function(ctx) {
+              // If the point value is above 6000, make the line red
+              return ctx.p0.parsed.y >= 6000 ? 'rgba(178, 51, 69, 1)' : '#1E6E7A';
+            }
+          }
         },
         {
           label: 'Rainfall (mm)',
@@ -1456,7 +1520,7 @@ function renderDetail(loc){
   h += renderChart(loc); 
   
   h += '<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs 7-day average</span></div></div>';
-  h += '<div class="plain-panel action"><strong>What to do now</strong><br>'+a.action+'</div>';
+ h += '<div class="' + actionClass + '"><strong>What to do now</strong><br>'+a.action+'</div>';
   h += '<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+'</span></div></div>';
   
   return h;
@@ -1662,10 +1726,39 @@ function wireUI(){
 
   document.getElementById('refreshBtn').addEventListener('click', refreshAll);
 
+ // 3-Way Cycle: Radar -> Satellite -> River WMS -> Radar
   document.getElementById('layerToggle').addEventListener('click', function(){
-    state.radar.mode = state.radar.mode === 'radar' ? 'satellite' : 'radar';
-    document.getElementById('layerLabel').textContent = state.radar.mode === 'radar' ? 'Radar' : 'Satellite';
-    loadRadar();
+    var labelEl = document.getElementById('layerLabel');
+    var timeEl = document.getElementById('mapTime');
+
+    if (state.radar.mode === 'radar') {
+      // Switch to Satellite
+      state.radar.mode = 'satellite';
+      labelEl.textContent = 'Satellite';
+      if(state.riverLayer) state.riverLayer.setOpacity(0);
+      loadRadar();
+      
+    } else if (state.radar.mode === 'satellite') {
+      // Switch to River Hydrology WMS
+      state.radar.mode = 'river';
+      labelEl.textContent = 'River Flood';
+      clearRadarLayers(); // Hide RainViewer clouds
+      
+      if(state.riverLayer) {
+        state.riverLayer.setOpacity(0.8); // Show Copernicus WMS
+      }
+      // Stop the radar play loop if it's running
+      clearInterval(state.radar.timer);
+      timeEl.textContent = 'Live River Hydrology (GloFAS)';
+      
+    } else {
+      // Switch back to Radar
+      state.radar.mode = 'radar';
+      labelEl.textContent = 'Radar';
+      if(state.riverLayer) state.riverLayer.setOpacity(0);
+      loadRadar();
+      if(state.radar.playing) startRadarLoop();
+    }
   });
 
   document.getElementById('playToggle').addEventListener('click', function(){
