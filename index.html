@@ -1505,7 +1505,9 @@ function renderDetail(loc){
   var h = '<div class="loc-detail">';
   
   // INJECT THE NEW CRITICAL ALERT BOX IF SEVERE OR DAM RELEASE
-  if (a.worst === 'severe' || loc.damReleaseAlert) {
+  var isEmergency = (a.worst === 'severe' || loc.damReleaseAlert);
+  
+  if (isEmergency) {
     h += '<div class="critical-alert-box">' +
          '<h3>⚠ ' + a.headline + '</h3>' +
          '<p>' + a.action + '</p>' +
@@ -1520,12 +1522,15 @@ function renderDetail(loc){
   h += renderChart(loc); 
   
   h += '<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs 7-day average</span></div></div>';
- h += '<div class="' + actionClass + '"><strong>What to do now</strong><br>'+a.action+'</div>';
+  
+  // Conditionally apply the emergency CSS class to the action box
+  var actionClass = isEmergency ? 'plain-panel action emergency' : 'plain-panel action';
+  h += '<div class="' + actionClass + '"><strong>What to do now</strong><br>'+a.action+'</div>';
+  
   h += '<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+'</span></div></div>';
   
   return h;
 }
-
 function renderLocations(){
   var wrap = document.getElementById('locations');
   var empty = document.getElementById('emptyState');
