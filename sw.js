@@ -1,12 +1,13 @@
 /* Assam Rain & Flood Watch — service worker
    Strategy:
-   - App shell (this page + manifest + icons): precached, cache-first
-   - API data (Open-Meteo, GloFAS flood, RainViewer, geocoding): network-first,
-     last-good copy kept in cache as offline fallback (the app additionally
-     keeps its own localStorage cache, so data paints even fully offline)
-   - Everything else static (fonts, Leaflet, map/radar tiles): stale-while-revalidate
+   - App shell (index + app-logic + manifest + icons): precached, cache-first
+   - API data (Open-Meteo, GloFAS flood, RainViewer, Copernicus, CWC Proxy): network-first,
+     last-good copy kept in cache as offline fallback
+   - Everything else static (fonts, Leaflet, Chart.js, map tiles): stale-while-revalidate
 */
-var VERSION = 'arfw-v3';  // bump on every deploy so installed clients refresh the cached app shell
+
+// V4 BUMP: This forces all user browsers to delete the old broken cache and download the fixed app
+var VERSION = 'arfw-v4';  
 var SHELL_CACHE = VERSION + '-shell';
 var RUNTIME_CACHE = VERSION + '-runtime';
 var DATA_CACHE = VERSION + '-data';
@@ -15,6 +16,7 @@ var MAX_RUNTIME_ITEMS = 400;
 var SHELL = [
   './',
   './index.html',
+  './app-logic.js', // NEW: Added your external logic file to the core shell
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -27,12 +29,16 @@ var API_HOSTS = [
   'api.open-meteo.com',
   'flood-api.open-meteo.com',
   'geocoding-api.open-meteo.com',
-  'api.rainviewer.com'
+  'api.rainviewer.com',
+  'global-flood-awareness-system.ecmwf.int', // NEW: Added Copernicus River WMS
+  'corsproxy.io' // NEW: Added CWC data proxy
 ];
 
 self.addEventListener('install', function(e){
+  // Skip waiting forces the waiting service worker to become the active service worker
+  self.skipWaiting();
   e.waitUntil(
-    caches.open(SHELL_CACHE).then(function(c){ return c.addAll(SHELL); }).then(function(){ return self.skipWaiting(); })
+    caches.open(SHELL_CACHE).then(function(c){ return c.addAll(SHELL); })
   );
 });
 
@@ -40,6 +46,7 @@ self.addEventListener('activate', function(e){
   e.waitUntil(
     caches.keys().then(function(keys){
       return Promise.all(keys.map(function(k){
+        // Delete any old caches that do not match the current V4 version strings
         if(k !== SHELL_CACHE && k !== RUNTIME_CACHE && k !== DATA_CACHE) return caches.delete(k);
       }));
     }).then(function(){ return self.clients.claim(); })
