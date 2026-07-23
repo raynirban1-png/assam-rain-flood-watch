@@ -191,14 +191,33 @@
   }
 
   /* ---------- Map ---------- */
+  /* Ensure map controls stay above all Leaflet layers */
+.map-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1000; /* Increased z-index so controls don't disappear */
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.map-time {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  z-index: 1000; /* Increased z-index */
+  background: rgba(14, 42, 61, 0.88);
+  color: var(--mist);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
   .map-section{position:relative;background:var(--paper);border-bottom:1px solid var(--line);}
   #map{height:250px;width:100%;background:#dbe6e4;}
-  .map-controls{position:absolute;top:8px;right:8px;z-index:30;display:flex;flex-direction:column;gap:6px;align-items:flex-end;}
-  .map-chip{
-    background:rgba(251,253,252,0.94);border:1px solid var(--line-strong);border-radius:100px;
-    padding:4px 10px;font-family:'JetBrains Mono';font-size:10px;letter-spacing:0.04em;color:var(--ink);
-    display:flex;align-items:center;gap:6px;cursor:pointer;box-shadow:var(--shadow);
-  }
+  
   .map-chip svg{width:11px;height:11px;}
   .map-time{
     position:absolute;bottom:8px;left:8px;z-index:30;background:rgba(14,42,61,0.82);color:var(--mist);
@@ -1127,55 +1146,92 @@ function rainRiverCoupling(loc){
   return { perTenMm: (totRise / totRain) * 10, samples: samples };
 }
 
-function publicRiskAnalysis(loc, th){
-  var rain24=Number(loc.next24||0), rain6=Number(loc.next6||0), peak=Number(loc.peakRate||0);
-  var pct=loc.dischargeTrend&&loc.dischargeTrend.pctChange!=null?loc.dischargeTrend.pctChange*100:0;
-  var peakForecastRise=0;
-  if(loc.dischargeTrend&&loc.peakFcstDisc&&loc.dischargeTrend.today>0){
-    peakForecastRise=((loc.peakFcstDisc.v-loc.dischargeTrend.today)/loc.dischargeTrend.today)*100;
-  }
-  var flashScore=clamp((peak/Math.max(th.rateExtreme,1))*55+(rain6/Math.max(th.warning24*.35,1))*30+(rain24/Math.max(th.severe24,1))*15,0,100);
-  var waterlogScore=clamp((rain6/Math.max(th.watch24*1.5,1))*45+(peak/Math.max(th.rateHeavy*1.4,1))*30+(rain24/Math.max(th.warning24,1))*25,0,100);
-  var riverScore=clamp(riskScore(rain24,th)*.38+clamp(Math.max(pct,0)/Math.max(th.dischargeSurge,1)*100,0,100)*.27+clamp(Math.max(peakForecastRise,0)/Math.max(th.dischargeSurge,1)*100,0,100)*.35,0,100);
-  var rainPressure=clamp((rain24/Math.max(th.warning24,1))*55+(rain6/Math.max(th.watch24,1))*25+(peak/Math.max(th.rateHeavy,1))*20,0,100);
-  var influence=clamp(30+rainPressure*.42+Math.max(peakForecastRise,0)*.25,25,90);
-  var confidence=(loc._wxError||!loc.dischargeTrend)?'Limited':(loc.dailyRain&&loc.dischargeSeries?'Moderate':'Limited');
-  var lagMin=peak>=th.rateExtreme?3:peak>=th.rateHeavy?5:8;
-  var lagMax=peak>=th.rateExtreme?10:peak>=th.rateHeavy?14:20;
-  var riverLevel=levelFromScore(riverScore), flashLevel=levelFromScore(flashScore), waterlogLevel=levelFromScore(waterlogScore);
-  var worst=[riverLevel,flashLevel,waterlogLevel].sort(function(a,b){return BAND_RANK[b]-BAND_RANK[a];})[0];
-  var headline=worst==='severe'?'Dangerous flooding conditions may develop quickly.':worst==='warning'?'Flooding is possible and conditions may worsen.':worst==='watch'?'Rain and river conditions need close watching.':'No strong flood signal is visible at present.';
-  var why=[];
-  if(peak>=th.rateExtreme)why.push('a very intense rain burst is forecast'); else if(peak>=th.rateHeavy)why.push('heavy short-duration rain is forecast');
-  if(rain24>=th.warning24)why.push('substantial rain is expected over 24 hours'); else if(rain24>=th.watch24)why.push('meaningful rain is expected over 24 hours');
-  if(peakForecastRise>=15)why.push('the river model shows a notable rise'); else if(pct>=8)why.push('river discharge is already above its recent average');
-  if(!why.length)why.push('rain and river indicators remain near their normal range');
-  var meaning=(flashLevel==='severe'||waterlogLevel==='severe')?'Low-lying roads, drains and small streams may become dangerous before the main river responds.':(riverLevel==='warning'||riverLevel==='severe')?'River-adjacent and low-lying areas should prepare for a possible rise after upstream rainfall moves downstream.':(waterlogLevel==='watch'||flashLevel==='watch')?'Local waterlogging can begin even if the Brahmaputra itself is not yet at a dangerous level.':'Continue normal caution and check again if rainfall intensifies.';
-  var action=worst==='severe'?'Avoid flowing water and low-lying routes. Move essential items upward and follow ASDMA or district instructions.':worst==='warning'?'Keep phones charged, protect documents and medicines, and identify a safe elevated route.':worst==='watch'?'Monitor official alerts, avoid riverbanks during heavy rain and check conditions again within a few hours.':'No special action is indicated beyond routine weather awareness.';
-    var coup = rainRiverCoupling(loc);
-  var rainShare = null, predictedRisePct = null;
-  if(coup){
-    predictedRisePct = coup.perTenMm * (rain24 / 10);
-    if(peakForecastRise > 1){
-      rainShare = Math.round(clamp(predictedRisePct / peakForecastRise * 100, 5, 100));
-    }
-  }
-  if(coup && coup.perTenMm >= 1){
-    why.push('recent local data shows roughly +' + (Math.round(coup.perTenMm*10)/10) + '% river rise per 10 mm of rain');
+function publicRiskAnalysis(loc, th) {
+  var rain24 = Number(loc.next24 || 0);
+  var rain6 = Number(loc.next6 || 0);
+  var peak = Number(loc.peakRate || 0);
+  var pct = (loc.dischargeTrend && loc.dischargeTrend.pctChange != null) ? loc.dischargeTrend.pctChange * 100 : 0;
+  
+  var peakForecastRise = 0;
+  if (loc.dischargeTrend && loc.peakFcstDisc && loc.dischargeTrend.today > 0) {
+    peakForecastRise = ((loc.peakFcstDisc.v - loc.dischargeTrend.today) / loc.dischargeTrend.today) * 100;
   }
 
-  // OVERRIDE FOR DAM RELEASE
+  // Flash flood score weighted heavily on short-burst rainfall (6h and hourly peak)
+  var flashScore = clamp(
+    (peak / Math.max(th.rateHeavy, 1)) * 40 + 
+    (rain6 / Math.max(th.watch24, 1)) * 40 + 
+    (rain24 / Math.max(th.warning24, 1)) * 20, 
+    0, 100
+  );
+
+  // Waterlogging score sensitive to 6-hour rainfall accumulation
+  var waterlogScore = clamp(
+    (rain6 / 8) * 50 + // 8mm+ in 6 hours triggers waterlogging watch
+    (rain24 / 20) * 30 + 
+    (peak / 5) * 20, 
+    0, 100
+  );
+
+  var riverScore = clamp(
+    riskScore(rain24, th) * 0.38 + 
+    clamp(Math.max(pct, 0) / Math.max(th.dischargeSurge, 1) * 100, 0, 100) * 0.27 + 
+    clamp(Math.max(peakForecastRise, 0) / Math.max(th.dischargeSurge, 1) * 100, 0, 100) * 0.35, 
+    0, 100
+  );
+
+  var rainPressure = clamp((rain24 / Math.max(th.warning24, 1)) * 55 + (rain6 / Math.max(th.watch24, 1)) * 25 + (peak / Math.max(th.rateHeavy, 1)) * 20, 0, 100);
+  var influence = clamp(30 + rainPressure * 0.42 + Math.max(peakForecastRise, 0) * 0.25, 25, 90);
+  var confidence = (loc._wxError || !loc.dischargeTrend) ? 'Limited' : 'Moderate';
+  var lagMin = peak >= th.rateExtreme ? 1 : peak >= th.rateHeavy ? 3 : 6;
+  var lagMax = peak >= th.rateExtreme ? 4 : peak >= th.rateHeavy ? 8 : 12;
+
+  var riverLevel = levelFromScore(riverScore);
+  var flashLevel = levelFromScore(flashScore);
+  var waterlogLevel = levelFromScore(waterlogScore);
+
+  var worst = [riverLevel, flashLevel, waterlogLevel].sort(function(a, b) {
+    return BAND_RANK[b] - BAND_RANK[a];
+  })[0];
+
+  var headline = worst === 'severe' ? 'Severe waterlogging & high flood risk.' :
+                 worst === 'warning' ? 'Waterlogging and rising water levels reported.' :
+                 worst === 'watch' ? 'Local rain accumulation — watch drains and low areas.' :
+                 'No major flood risk detected.';
+
+  var why = [];
+  if (rain6 >= 5) why.push('intense local rainfall in recent hours (' + fmt1(rain6) + ' mm/6h)');
+  if (peak >= 5) why.push('short rain bursts up to ' + fmt1(peak) + ' mm/h');
+  if (rain24 >= th.watch24) why.push(fmt1(rain24) + ' mm rain forecast in 24h');
+  if (!why.length) why.push('rain and river levels remain near normal');
+
+  var meaning = (waterlogLevel === 'warning' || waterlogLevel === 'severe') ?
+    'Urban drainage overflow and road waterlogging expected in low-lying city streets.' :
+    'Keep updated on local rainfall shifts.';
+
+  var action = (worst === 'severe' || worst === 'warning') ?
+    'Avoid submerged roads and low-lying underpasses. Charge essential devices and follow official updates.' :
+    'Exercise standard caution during rain.';
+
+  // Override if dam alert active
   if (loc.damReleaseAlert) {
-     riverScore = 100;
-     worst = 'severe';
-     riverLevel = 'severe';
-     headline = 'DANGEROUS: Sudden river surge expected due to upstream dam water release.';
-     why = ['upstream dam sluice gates have been opened (e.g., Doyang/Kurichu)'];
-     meaning = 'River levels will rise unnaturally fast regardless of local rainfall. Low-lying areas are at immediate risk.';
-     action = 'Evacuate riverbanks immediately. Follow ASDMA and district administration emergency protocols.';
+    riverScore = 100;
+    worst = 'severe';
+    riverLevel = 'severe';
+    headline = 'DANGEROUS: River surge due to upstream dam release.';
+    why = ['upstream dam sluice gates opened'];
+    meaning = 'Sudden water rise expected along riverbanks.';
+    action = 'Evacuate low-lying river areas immediately.';
   }
 
-  return {riverScore:riverScore,flashScore:flashScore,waterlogScore:waterlogScore,riverLevel:riverLevel,flashLevel:flashLevel,waterlogLevel:waterlogLevel,rainPressure:rainPressure,influenceLow:Math.max(20,Math.round(influence-8)),influenceHigh:Math.min(95,Math.round(influence+8)),coupling:coup,rainShare:rainShare,predictedRisePct:predictedRisePct,confidence:confidence,lagMin:lagMin,lagMax:lagMax,peakForecastRise:peakForecastRise,headline:headline,why:why,meaning:meaning,action:action,worst:worst};
+  return {
+    riverScore: riverScore, flashScore: flashScore, waterlogScore: waterlogScore,
+    riverLevel: riverLevel, flashLevel: flashLevel, waterlogLevel: waterlogLevel,
+    rainPressure: rainPressure, influenceLow: Math.max(20, Math.round(influence - 8)),
+    influenceHigh: Math.min(95, Math.round(influence + 8)), confidence: confidence,
+    lagMin: lagMin, lagMax: lagMax, peakForecastRise: peakForecastRise,
+    headline: headline, why: why, meaning: meaning, action: action, worst: worst
+  };
 }
 function publicCardSummary(loc){
   var a=publicRiskAnalysis(loc,state.thresholds);
@@ -1231,35 +1287,35 @@ function renderChart(loc){
 }
 
 /* ============ Chart.js Drawing & Live Logic ============ */
+/* ============ Real Historical & Forecast Chart ============ */
 function drawInteractiveChart(loc) {
   var canvasId = 'floodCanvas_' + loc.id;
   var canvasEl = document.getElementById(canvasId);
-  if (!canvasEl) return; 
+  if (!canvasEl) return;
   var ctx = canvasEl.getContext('2d');
 
   if (loc._chartInstance) {
     loc._chartInstance.destroy();
   }
 
-  // Clear existing live timer to prevent speed-ups
-  if (loc._liveTimer) clearInterval(loc._liveTimer);
-
-  var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
+  var anchor = loc.todayStr || new Date().toISOString().slice(0, 10);
+  var dates = [];
   var labels = [];
-  var riverData = [];
-  var rainData = [];
-
-  // Generate recent baseline data
-  for(var i=-5; i<=0; i++) {
-    labels.push(i === 0 ? 'Now' : shiftDate(anchor, i).slice(5)); 
-    riverData.push(5000 + (Math.random() * 500)); // Baseline river level
-    rainData.push(Math.floor(Math.random() * 15));
+  
+  // Plot 5 days past to 5 days ahead
+  for (var i = -5; i <= 5; i++) {
+    var d = shiftDate(anchor, i);
+    dates.push(d);
+    labels.push(i === 0 ? 'Today' : dateLabel(d));
   }
 
-  // Check if Dam Release override is active
-  if (loc.damReleaseAlert) {
-    riverData[riverData.length - 1] = 8500; // Spike the current data
-  }
+  var rainMap = {};
+  var discMap = {};
+  (loc.dailyRain || []).forEach(function(d) { rainMap[d.date] = d.mm; });
+  (loc.dischargeSeries || []).forEach(function(d) { if (d.v != null) discMap[d.date] = d.v; });
+
+  var rainData = dates.map(function(d) { return rainMap[d] || 0; });
+  var riverData = dates.map(function(d) { return discMap[d] || null; });
 
   loc._chartInstance = new Chart(ctx, {
     type: 'line',
@@ -1269,102 +1325,69 @@ function drawInteractiveChart(loc) {
         {
           label: 'River Discharge (m³/s)',
           data: riverData,
-          borderColor: '#1E6E7A', // Default color
-          backgroundColor: 'rgba(30, 110, 122, 0.1)',
+          borderColor: '#1E6E7A',
+          backgroundColor: 'rgba(30, 110, 122, 0.12)',
           yAxisID: 'yRiver',
           fill: true,
-          tension: 0.4,
-          pointRadius: 3,
-          // NEW: Change line color if it crosses the Warning Level (e.g., 6000)
+          tension: 0.3,
+          pointRadius: 4,
           segment: {
             borderColor: function(ctx) {
-              // If the point value is above 6000, make the line red
-              return ctx.p0.parsed.y >= 6000 ? 'rgba(178, 51, 69, 1)' : '#1E6E7A';
+              return ctx.p0.parsed.y >= 6000 ? '#B23345' : '#1E6E7A';
             }
           }
         },
         {
-          label: 'Rainfall (mm)',
+          label: 'Daily Rainfall (mm)',
           data: rainData,
           type: 'bar',
           backgroundColor: '#3F7FB5',
           yAxisID: 'yRain',
-          borderRadius: 3
+          borderRadius: 4
         }
       ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      animation: { duration: 800, easing: 'linear' }, // Smooth sliding
       interaction: { mode: 'index', intersect: false },
       scales: {
-        yRiver: { type: 'linear', position: 'left', min: 0, max: 10000 },
-        yRain: { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
+        yRiver: {
+          type: 'linear',
+          position: 'left',
+          title: { display: true, text: 'Discharge (m³/s)', font: { size: 10 } }
+        },
+        yRain: {
+          type: 'linear',
+          position: 'right',
+          title: { display: true, text: 'Rainfall (mm)', font: { size: 10 } },
+          grid: { drawOnChartArea: false }
+        }
       },
       plugins: {
         annotation: {
           annotations: {
-            dangerLine: {
-              type: 'line',
-              yMin: 8000,
-              yMax: 8000,
-              yScaleID: 'yRiver',
-              borderColor: 'rgba(178, 51, 69, 0.9)',
-              borderWidth: 2,
-              borderDash: [6, 6],
-              label: { display: true, content: 'DANGER LEVEL', position: 'end', backgroundColor: 'rgba(178, 51, 69, 0.9)' }
-            },
             warningLine: {
               type: 'line',
               yMin: 6000,
               yMax: 6000,
               yScaleID: 'yRiver',
-              borderColor: 'rgba(193, 89, 28, 0.9)',
+              borderColor: 'rgba(193, 89, 28, 0.8)',
               borderWidth: 2,
-              borderDash: [4, 4],
-              label: { display: true, content: 'WARNING LEVEL', position: 'end', backgroundColor: 'rgba(193, 89, 28, 0.9)' }
+              borderDash: [5, 5],
+              label: { display: true, content: 'WARNING', position: 'end', backgroundColor: 'rgba(193, 89, 28, 0.8)' }
             }
           }
         }
       }
     }
   });
+}
 
   // Start the live scrolling effect
   startLiveChartUpdate(loc);
 }
 
-function startLiveChartUpdate(loc) {
-  loc._liveTimer = setInterval(() => {
-    if (!loc._chartInstance) return;
-    const chart = loc._chartInstance;
-    
-    // Simulate real-time river fluctuations based on current state
-    const currentData = chart.data.datasets[0].data;
-    const lastValue = currentData[currentData.length - 1];
-    
-    // If dam release is active, continuously rise rapidly. Otherwise, natural flutter.
-    const change = loc.damReleaseAlert ? (Math.random() * 200 + 50) : (Math.random() * 100 - 50);
-    const newValue = Math.max(0, lastValue + change);
-
-    // Push new timestamp and data
-    const now = new Date();
-    chart.data.labels.push(now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
-    chart.data.datasets[0].data.push(newValue);
-    chart.data.datasets[1].data.push(0); // Assuming no live rain pulse for now
-
-    // Shift old data out to create the moving ticker effect
-    if (chart.data.labels.length > 8) {
-      chart.data.labels.shift();
-      chart.data.datasets[0].data.shift();
-      chart.data.datasets[1].data.shift();
-    }
-    
-    chart.update('none'); // Update without full reload for a seamless scroll
-  }, 3000); // Scrolls every 3 seconds
-}
-  
 function renderPublicDangerChart(loc){
   var a = publicRiskAnalysis(loc, state.thresholds), th = state.thresholds;
   var W=340, H=170, L=34, R=10, T=14, B=27, plotW=W-L-R, plotH=H-T-B;
