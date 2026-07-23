@@ -671,7 +671,16 @@
         var raw = localStorage.getItem(LS_CONFIG_KEY);
         if(raw){
           var cfg = JSON.parse(raw);
-          if(Array.isArray(cfg.locations) && cfg.locations.length){ state.locations = cfg.locations; }
+          if(Array.isArray(cfg.locations) && cfg.locations.length){ 
+            // Merge stored locations with default flags (such as damReleaseAlert)
+            state.locations = cfg.locations.map(function(storedLoc){
+              var defaultMatch = DEFAULT_LOCATIONS.find(function(d){ return d.id === storedLoc.id; });
+              if(defaultMatch && defaultMatch.damReleaseAlert){
+                storedLoc.damReleaseAlert = true;
+              }
+              return storedLoc;
+            });
+          }
           if(cfg.thresholds){ state.thresholds = Object.assign({}, DEFAULT_THRESHOLDS, cfg.thresholds); }
         }
         var notify = localStorage.getItem(LS_NOTIFY_KEY);
@@ -1038,29 +1047,24 @@ function initMap(){
   state.map = L.map('map', { zoomControl:false, attributionControl:false }).setView([26.05, 90.4], 8);
   L.control.zoom({ position:'bottomright' }).addTo(state.map);
   
-  // Base Map Layer
+  // Base Map Layer (Carto Light)
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     subdomains:'abcd', maxZoom:19
   }).addTo(state.map);
 
-  // NEW: Add a Hydrological / River WMS Layer
-  // Note: This uses the open GloFAS WMS as an example to show live river anomalies
-  state.riverLayer = L.tileLayer.wms("https://global-flood-awareness-system.ecmwf.int/api/wms/", {
-      layers: 'flood_warning', // Shows river sections exceeding thresholds
-      format: 'image/png',
-      transparent: true,
-      opacity: 0.8,
-      attribution: 'Copernicus GloFAS'
+  // Reliable Topographic & Hydrological River Tile Layer
+  state.riverLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+    maxZoom: 17,
+    opacity: 0, // Hidden by default, toggled via layerToggle button
+    attribution: 'OpenTopoMap'
   });
   
-  // Add it to the map by default
   state.riverLayer.addTo(state.map);
 
   state.map.on('click', function(e){
     reverseAddAt(e.latlng.lat, e.latlng.lng);
   });
 }
-
 function reverseAddAt(lat, lon){
   addLocation({ id: uid(), name: 'Pinned ' + lat.toFixed(2) + ', ' + lon.toFixed(2), lat: +lat.toFixed(4), lon: +lon.toFixed(4) });
 }
