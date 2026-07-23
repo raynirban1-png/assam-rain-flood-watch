@@ -1206,12 +1206,12 @@ function publicRiskAnalysis(loc, th) {
     action = 'Evacuate low-lying river areas immediately.';
   }
   // OVERRIDE FOR DAM RELEASE AND STUBBORN CACHE
-  if (loc.id === 'golaghat' || loc.damReleaseAlert) {
+  if (loc.damReleaseAlert) {
     riverScore = 100;
     worst = 'severe';
     riverLevel = 'severe';
     headline = 'DANGEROUS: River surge due to upstream dam release.';
-    why = ['upstream dam sluice gates opened (Doyang Dam)'];
+    why = ['upstream dam sluice gates opened'];
     meaning = 'Sudden water rise expected along riverbanks. Water levels are actively surging.';
     action = 'Evacuate low-lying river areas immediately.';
   }
@@ -1221,10 +1221,11 @@ function publicRiskAnalysis(loc, th) {
 
 function publicCardSummary(loc){
   var a=publicRiskAnalysis(loc,state.thresholds);
-  if(a.worst==='severe')return '<strong>Act now:</strong> dangerous flooding conditions may develop quickly.';
-  if(a.worst==='warning')return '<strong>Prepare:</strong> flooding is possible as rain and river conditions worsen.';
-  if(a.worst==='watch')return '<strong>Watch closely:</strong> local flooding or a later river rise is possible.';
-  return '<strong>Currently low risk:</strong> no strong flood signal is visible.';
+  var lm = window.langManager || { getText: function(k){ return k; } };
+  if(a.worst==='severe')return '<strong>' + lm.getText('riskSevere').split(':')[0] + ':</strong>' + lm.getText('riskSevere').substring(lm.getText('riskSevere').indexOf(':') + 1);
+  if(a.worst==='warning')return '<strong>' + lm.getText('riskWarning').split(':')[0] + ':</strong>' + lm.getText('riskWarning').substring(lm.getText('riskWarning').indexOf(':') + 1);
+  if(a.worst==='watch')return '<strong>' + lm.getText('riskWatch').split(':')[0] + ':</strong>' + lm.getText('riskWatch').substring(lm.getText('riskWatch').indexOf(':') + 1);
+  return '<strong>' + lm.getText('riskNormal').split(':')[0] + ':</strong>' + lm.getText('riskNormal').substring(lm.getText('riskNormal').indexOf(':') + 1);
 }
 
 /* ============ Danger assessment ============ */
@@ -1265,161 +1266,10 @@ function dangerAssessment(loc, th){
 }
 
 /* ============ Chart ============ */
-/* ============ Interactive Chart.js Container ============ */
 function renderChart(loc){
-  return '<div class="chart-container" style="position: relative; height: 220px; width: 100%; margin-top: 10px;">' +
-         '<canvas id="floodCanvas_' + loc.id + '"></canvas>' +
-         '</div>';
+  return renderPublicDangerChart(loc);
 }
 
-/* ============ Chart.js Drawing & Live Logic ============ */
-/* ============ High-Alert Live Chart ============ */
-function drawInteractiveChart(loc) {
-  var canvasId = 'floodCanvas_' + loc.id;
-  var canvasEl = document.getElementById(canvasId);
-  if (!canvasEl) return;
-  var ctx = canvasEl.getContext('2d');
-
-  if (loc._chartInstance) loc._chartInstance.destroy();
-  if (loc._liveTimer) clearInterval(loc._liveTimer);
-
-  var anchor = loc.todayStr || new Date().toISOString().slice(0, 10);
-  var dates = [];
-  var labels = [];
-  
-  // Plot recent historical data leading up to "Now"
-  for (var i = -4; i <= 0; i++) {
-    var d = shiftDate(anchor, i);
-    dates.push(d);
-    labels.push(i === 0 ? new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : dateLabel(d));
-  }
-
-  var rainMap = {};
-  var discMap = {};
-  (loc.dailyRain || []).forEach(function(d) { rainMap[d.date] = d.mm; });
-  (loc.dischargeSeries || []).forEach(function(d) { if (d.v != null) discMap[d.date] = d.v; });
-
-  var rainData = dates.map(function(d) { return rainMap[d] || 0; });
-  var riverData = dates.map(function(d) { 
-    var baseRiver = discMap[d] || 3000; 
-    var localRain = rainMap[d] || 0;
-    return baseRiver + (localRain * 120); 
-  });
-
-  // Apply Dam Release spike for the active emergency
-  if (loc.id === 'golaghat' || loc.damReleaseAlert) {
-     riverData[riverData.length - 1] = 8800; // Immediate severe spike
-     rainData[rainData.length - 1] = 15; 
-  }
-
-  loc._chartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: labels,
-      datasets: [
-        {
-          label: 'LIVE DISCHARGE (m³/s)',
-          data: riverData,
-          borderColor: '#12262E',
-          backgroundColor: 'rgba(30, 110, 122, 0.5)',
-          yAxisID: 'yRiver',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 4,
-          pointBackgroundColor: '#fff',
-          borderWidth: 3,
-          segment: {
-            borderColor: function(ctx) {
-              return ctx.p0.parsed.y >= 6000 ? '#B23345' : '#12262E';
-            }
-          }
-        },
-        {
-          label: 'RAIN BURST (mm)',
-          data: rainData,
-          type: 'bar',
-          backgroundColor: 'rgba(63, 127, 181, 0.9)',
-          yAxisID: 'yRain',
-          borderRadius: 2,
-          barPercentage: 0.4
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: { duration: 400, easing: 'linear' },
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: { 
-          grid: { display: false }, 
-          ticks: { font: { family: 'JetBrains Mono', weight: 'bold' } } 
-        },
-        yRiver: { 
-          type: 'linear', position: 'left', min: 0, max: 10000,
-          grid: { color: 'rgba(0,0,0,0.05)' },
-          ticks: { font: { family: 'JetBrains Mono' } } 
-        },
-        yRain: { 
-          type: 'linear', position: 'right', min: 0, max: 100, 
-          grid: { display: false }, ticks: { display: false } // Hidden for a cleaner dashboard look
-        }
-      },
-      plugins: {
-        legend: { labels: { font: { family: 'JetBrains Mono', weight: 'bold' } } },
-        annotation: {
-          annotations: {
-            dangerZone: {
-              type: 'box', yMin: 8000, yMax: 10000, yScaleID: 'yRiver',
-              backgroundColor: 'rgba(178, 51, 69, 0.15)', borderWidth: 0,
-              label: { display: true, content: 'CRITICAL ZONE', position: 'center', color: '#B23345', font: {family: 'Space Grotesk', weight: 'bold'} }
-            },
-            warningZone: {
-              type: 'box', yMin: 6000, yMax: 8000, yScaleID: 'yRiver',
-              backgroundColor: 'rgba(193, 89, 28, 0.1)', borderWidth: 0,
-              label: { display: true, content: 'WARNING ZONE', position: 'center', color: '#C1591C', font: {family: 'Space Grotesk', weight: 'bold'} }
-            }
-          }
-        }
-      }
-    }
-  });
-
-  // Launch the live scrolling effect
-  startLiveChartUpdate(loc);
-}
-
-function startLiveChartUpdate(loc) {
-  loc._liveTimer = setInterval(function() {
-    if (!loc._chartInstance) return;
-    var chart = loc._chartInstance;
-    
-    var currentData = chart.data.datasets[0].data;
-    var lastValue = currentData[currentData.length - 1];
-    
-    var isEmergency = loc.id === 'golaghat' || loc.damReleaseAlert;
-    // Creates turbulence: wildly fluctuating if emergency, gentle flutter if normal
-    var change = isEmergency ? (Math.random() * 400 - 100) : (Math.random() * 100 - 50);
-    var newValue = Math.max(0, lastValue + change);
-
-    var now = new Date();
-    chart.data.labels.push(now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
-    chart.data.datasets[0].data.push(newValue);
-    
-    var currentRain = chart.data.datasets[1].data;
-    var lastRain = currentRain[currentRain.length - 1];
-    chart.data.datasets[1].data.push(Math.max(0, lastRain + (Math.random() * 2 - 1)));
-
-    // Keep the chart scrolling by removing the oldest data point
-    if (chart.data.labels.length > 6) {
-      chart.data.labels.shift();
-      chart.data.datasets[0].data.shift();
-      chart.data.datasets[1].data.shift();
-    }
-    
-    chart.update('none'); 
-  }, 2000); 
-}
 function renderPublicDangerChart(loc){
   var a = publicRiskAnalysis(loc, state.thresholds), th = state.thresholds;
   var W=340, H=170, L=34, R=10, T=14, B=27, plotW=W-L-R, plotH=H-T-B;
@@ -1642,11 +1492,6 @@ function renderLocations(){
         '</div>' +
       '</div>' + body;
     wrap.appendChild(card);
-    if(isOpen && (loc.dischargeSeries || loc.dailyRain)) {
-      setTimeout(function() {
-        drawInteractiveChart(loc);
-      }, 50);
-    }
   });
 
   wrap.querySelectorAll('.loc-remove').forEach(function(btn){
@@ -1902,6 +1747,8 @@ function init(){
     }
   });
 }
+
+window.renderAll = renderAll;
 
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', init);

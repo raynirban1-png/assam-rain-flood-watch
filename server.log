@@ -1,0 +1,17 @@
+127.0.0.1 - - [23/Jul/2026 16:12:42] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:12:53] "GET /app-logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:13:04] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:13:16] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:13:27] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:13:38] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:13:48] "GET /app-logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:10] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:11] "GET /app-logic.js HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /sw.js HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /index.html HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /manifest.webmanifest HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /icons/icon-192.png HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /icons/icon-512.png HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /icons/icon-maskable-192.png HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /icons/icon-maskable-512.png HTTP/1.1" 200 -
+127.0.0.1 - - [23/Jul/2026 16:15:12] "GET /icons/apple-touch-icon.png HTTP/1.1" 200 -
