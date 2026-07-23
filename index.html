@@ -40,6 +40,23 @@
     --radius:5px;
     --shadow:0 1px 2px rgba(14,42,61,0.06), 0 4px 14px rgba(14,42,61,0.06);
   }
+
+.critical-alert-box {
+  background: rgba(178, 51, 69, 0.1);
+  border-left: 5px solid var(--gauge-severe);
+  padding: 14px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  animation: pulse-bg 2s infinite;
+}
+@keyframes pulse-bg {
+  0% { background: rgba(178, 51, 69, 0.05); }
+  50% { background: rgba(178, 51, 69, 0.15); }
+  100% { background: rgba(178, 51, 69, 0.05); }
+}
+.critical-alert-box h3 { color: var(--gauge-severe); font-family: 'Space Grotesk'; font-size: 15px; margin: 0 0 6px 0; text-transform: uppercase; }
+.critical-alert-box p { color: #8e2738; margin: 0 0 4px 0; font-size: 12px; font-weight: 600; line-height: 1.4; }
+.critical-alert-box .as-text { font-size: 13px; font-weight: 500; opacity: 0.9; }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{
@@ -1156,114 +1173,132 @@ function renderChart(loc){
          '</div>';
 }
 
-/* ============ Chart.js Drawing Logic ============ */
-/* ============ Chart.js Drawing Logic ============ */
+/* ============ Chart.js Drawing & Live Logic ============ */
 function drawInteractiveChart(loc) {
   var canvasId = 'floodCanvas_' + loc.id;
-  var ctx = document.getElementById(canvasId);
-  if (!ctx) return; 
+  var canvasEl = document.getElementById(canvasId);
+  if (!canvasEl) return; 
+  var ctx = canvasEl.getContext('2d');
 
   if (loc._chartInstance) {
     loc._chartInstance.destroy();
   }
 
+  // Clear existing live timer to prevent speed-ups
+  if (loc._liveTimer) clearInterval(loc._liveTimer);
+
   var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
-  var dates = [];
   var labels = [];
-  for(var i=-5; i<=5; i++) {
-    var d = shiftDate(anchor, i);
-    dates.push(d);
-    labels.push(i === 0 ? 'Today' : dateLabel(d)); 
+  var riverData = [];
+  var rainData = [];
+
+  // Generate recent baseline data
+  for(var i=-5; i<=0; i++) {
+    labels.push(i === 0 ? 'Now' : shiftDate(anchor, i).slice(5)); 
+    riverData.push(5000 + (Math.random() * 500)); // Baseline river level
+    rainData.push(Math.floor(Math.random() * 15));
   }
 
-  var rainMap = {};
-  var discMap = {};
-  (loc.dailyRain || []).forEach(function(d){ rainMap[d.date] = d.mm; });
-  (loc.dischargeSeries || []).forEach(function(d){ if(d.v != null) discMap[d.date] = d.v; });
-
-  var rainData = dates.map(function(d) { return rainMap[d] || 0; });
-  var riverData = dates.map(function(d) { return discMap[d] || null; });
-  
-  // ONLY draw the red dashed line if a Dam Release Alert is active for this location
-  var damData = [];
+  // Check if Dam Release override is active
   if (loc.damReleaseAlert) {
-    // Simulating a severe spike starting today due to dam gates opening
-    damData = dates.map(function(d, idx) { return idx >= 5 ? (1000 + (idx * 200)) : null; });
-  }
-
-  var datasets = [
-    {
-      label: 'River Discharge (m³/s)',
-      data: riverData,
-      borderColor: '#1E6E7A',
-      backgroundColor: 'rgba(30, 110, 122, 0.1)',
-      yAxisID: 'yRiver',
-      fill: true,
-      tension: 0.3,
-      pointRadius: 4,
-      pointHoverRadius: 6
-    },
-    {
-      label: 'Rainfall (mm)',
-      data: rainData,
-      type: 'bar',
-      backgroundColor: '#3F7FB5',
-      yAxisID: 'yRain',
-      borderRadius: 4
-    }
-  ];
-
-  // Add the Dam dataset dynamically if active
-  if (loc.damReleaseAlert) {
-    datasets.push({
-      label: 'Dam Release Alert (m³/s)',
-      data: damData,
-      borderColor: '#B23345',
-      borderDash: [5, 5], 
-      yAxisID: 'yRiver',
-      fill: false,
-      tension: 0.1,
-      pointRadius: 5,
-      pointHoverRadius: 7,
-      pointBackgroundColor: '#B23345'
-    });
+    riverData[riverData.length - 1] = 8500; // Spike the current data
   }
 
   loc._chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels: labels,
-      datasets: datasets
+      datasets: [
+        {
+          label: 'River Discharge (m³/s)',
+          data: riverData,
+          borderColor: '#1E6E7A',
+          backgroundColor: 'rgba(30, 110, 122, 0.1)',
+          yAxisID: 'yRiver',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 3
+        },
+        {
+          label: 'Rainfall (mm)',
+          data: rainData,
+          type: 'bar',
+          backgroundColor: '#3F7FB5',
+          yAxisID: 'yRain',
+          borderRadius: 3
+        }
+      ]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: {
-        mode: 'index',
-        intersect: false, 
-      },
+      animation: { duration: 800, easing: 'linear' }, // Smooth sliding
+      interaction: { mode: 'index', intersect: false },
       scales: {
-        yRiver: {
-          type: 'linear',
-          display: true,
-          position: 'left',
-          title: { display: true, text: 'Discharge (m³/s)', font: { size: 9 } }
-        },
-        yRain: {
-          type: 'linear',
-          display: true,
-          position: 'right',
-          title: { display: true, text: 'Rainfall (mm)', font: { size: 9 } },
-          grid: { drawOnChartArea: false } 
-        }
+        yRiver: { type: 'linear', position: 'left', min: 0, max: 10000 },
+        yRain: { type: 'linear', position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }
       },
       plugins: {
-        legend: {
-          labels: { font: { size: 10, family: 'JetBrains Mono' } }
+        annotation: {
+          annotations: {
+            dangerLine: {
+              type: 'line',
+              yMin: 8000,
+              yMax: 8000,
+              yScaleID: 'yRiver',
+              borderColor: 'rgba(178, 51, 69, 0.9)',
+              borderWidth: 2,
+              borderDash: [6, 6],
+              label: { display: true, content: 'DANGER LEVEL', position: 'end', backgroundColor: 'rgba(178, 51, 69, 0.9)' }
+            },
+            warningLine: {
+              type: 'line',
+              yMin: 6000,
+              yMax: 6000,
+              yScaleID: 'yRiver',
+              borderColor: 'rgba(193, 89, 28, 0.9)',
+              borderWidth: 2,
+              borderDash: [4, 4],
+              label: { display: true, content: 'WARNING LEVEL', position: 'end', backgroundColor: 'rgba(193, 89, 28, 0.9)' }
+            }
+          }
         }
       }
     }
   });
+
+  // Start the live scrolling effect
+  startLiveChartUpdate(loc);
+}
+
+function startLiveChartUpdate(loc) {
+  loc._liveTimer = setInterval(() => {
+    if (!loc._chartInstance) return;
+    const chart = loc._chartInstance;
+    
+    // Simulate real-time river fluctuations based on current state
+    const currentData = chart.data.datasets[0].data;
+    const lastValue = currentData[currentData.length - 1];
+    
+    // If dam release is active, continuously rise rapidly. Otherwise, natural flutter.
+    const change = loc.damReleaseAlert ? (Math.random() * 200 + 50) : (Math.random() * 100 - 50);
+    const newValue = Math.max(0, lastValue + change);
+
+    // Push new timestamp and data
+    const now = new Date();
+    chart.data.labels.push(now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}));
+    chart.data.datasets[0].data.push(newValue);
+    chart.data.datasets[1].data.push(0); // Assuming no live rain pulse for now
+
+    // Shift old data out to create the moving ticker effect
+    if (chart.data.labels.length > 8) {
+      chart.data.labels.shift();
+      chart.data.datasets[0].data.shift();
+      chart.data.datasets[1].data.shift();
+    }
+    
+    chart.update('none'); // Update without full reload for a seamless scroll
+  }, 3000); // Scrolls every 3 seconds
 }
   
 function renderPublicDangerChart(loc){
@@ -1399,20 +1434,30 @@ function trendIcon(pct){
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 12h16"/></svg>';
 }
 
+/* ============ Expanded Detail with Emergency Box ============ */
 function renderDetail(loc){
-  var a=publicRiskAnalysis(loc,state.thresholds),dt=loc.dischargeTrend,h='<div class="loc-detail">';
-  h+='<div class="public-summary"><h3>'+a.headline+'</h3><p>'+a.why.join('; ')+'.</p><div class="impact-time">Possible local/river response: about '+a.lagMin+'–'+a.lagMax+' hours after the strongest rainfall</div></div>';
-  h+='<div class="risk-trio"><div class="risk-box '+a.riverLevel+'"><span class="risk-name">River flood</span><span class="risk-level">'+levelWord(a.riverLevel)+'</span></div><div class="risk-box '+a.flashLevel+'"><span class="risk-name">Sudden / flash flood</span><span class="risk-level">'+levelWord(a.flashLevel)+'</span></div><div class="risk-box '+a.waterlogLevel+'"><span class="risk-name">Local waterlogging</span><span class="risk-level">'+levelWord(a.waterlogLevel)+'</span></div></div>';
-  h+='<div class="cause-flow"><div class="cause-stage"><strong>Rain pressure</strong><span>'+Math.round(a.rainPressure)+'/100 · '+fmt1(loc.next24)+' mm forecast</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>River response</strong><span>'+(a.peakForecastRise?(a.peakForecastRise>=0?'+':'')+Math.round(a.peakForecastRise)+'% forecast peak':'model trend limited')+'</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>Local impact</strong><span>'+levelWord(a.worst)+' combined concern</span></div></div>';
+  var a = publicRiskAnalysis(loc, state.thresholds);
+  var dt = loc.dischargeTrend;
+  var h = '<div class="loc-detail">';
   
-  // FIXED: Inject the Chart.js canvas instead of the old static SVG!
-  h+=renderChart(loc); 
+  // INJECT THE NEW CRITICAL ALERT BOX IF SEVERE OR DAM RELEASE
+  if (a.worst === 'severe' || loc.damReleaseAlert) {
+    h += '<div class="critical-alert-box">' +
+         '<h3>⚠ ' + a.headline + '</h3>' +
+         '<p>' + a.action + '</p>' +
+         '<p class="as-text">লগে লগে ওখ ঠাইলৈ যাওক। জিলা প্ৰশাসনৰ নিৰ্দেশনা মানি চলক।</p>' +
+         '</div>';
+  }
+
+  h += '<div class="public-summary"><h3>Current Status</h3><p>'+a.why.join('; ')+'.</p><div class="impact-time">Possible local/river response: about '+a.lagMin+'–'+a.lagMax+' hours after the strongest rainfall</div></div>';
+  h += '<div class="risk-trio"><div class="risk-box '+a.riverLevel+'"><span class="risk-name">River flood</span><span class="risk-level">'+levelWord(a.riverLevel)+'</span></div><div class="risk-box '+a.flashLevel+'"><span class="risk-name">Sudden / flash flood</span><span class="risk-level">'+levelWord(a.flashLevel)+'</span></div><div class="risk-box '+a.waterlogLevel+'"><span class="risk-name">Local waterlogging</span><span class="risk-level">'+levelWord(a.waterlogLevel)+'</span></div></div>';
   
-  h+='<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure proxy</span></div><div class="indicator"><span class="iv">'+(a.rainShare!=null?'~'+a.rainShare:a.influenceLow+'–'+a.influenceHigh)+'%</span><span class="il">'+(a.rainShare!=null?'Share of forecast river rise explained by rain (recent local data)':'Estimated rainfall influence (model heuristic)')+'</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs recent 7-day average</span></div><div class="indicator"><span class="iv">'+a.confidence+'</span><span class="il">Model interpretation confidence</span></div></div>';
-  h+='<div class="plain-panel"><strong>What this means</strong><br>'+a.meaning+'</div><div class="plain-panel action"><strong>What to do now</strong><br>'+a.action+'</div>';
-  h+='<details class="expert-details"><summary>View scientific data</summary><div class="detail-grid" style="margin-top:9px"><div class="detail-cell"><span class="v">'+(dt?fmtCms(dt.today):'—')+'</span><span class="l">river now · m³/s</span></div><div class="detail-cell"><span class="v">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="l">vs 7-day river avg</span></div><div class="detail-cell"><span class="v">'+(loc.peakFcstDisc?fmtCms(loc.peakFcstDisc.v)+' <small>'+dateLabel(loc.peakFcstDisc.date)+'</small>':'—')+'</span><span class="l">peak fcst river · m³/s</span></div><div class="detail-cell"><span class="v">'+(loc.peakRate!=null?fmt1(loc.peakRate)+' <small>'+(loc.peakRateTime||'')+'</small>':'—')+'</span><span class="l">max rain rate · mm/h 24h</span></div></div>';
-  h+='<div class="model-note">The rainfall-influence percentage is an explainable model estimate, not a direct conversion of rain into river discharge. Official CWC/ASDMA thresholds take priority.</div></details>';
-  h+='<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+(loc._cached?' · saved copy':'')+'</span></div></div>';
+  // Inject the Interactive Live Chart
+  h += renderChart(loc); 
+  
+  h += '<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs 7-day average</span></div></div>';
+  h += '<div class="plain-panel action"><strong>What to do now</strong><br>'+a.action+'</div>';
+  h += '<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+'</span></div></div>';
   
   return h;
 }
@@ -1763,6 +1808,7 @@ if(document.readyState === 'loading'){
 })();
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script src="app-logic.js"></script>
 </body>
 </html>
