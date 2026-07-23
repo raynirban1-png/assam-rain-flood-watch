@@ -1290,11 +1290,10 @@ function drawInteractiveChart(loc) {
 
   var rainData = dates.map(function(d) { return rainMap[d] || 0; });
   
-  // FIX FOR FLAT LINES: Blend flat river data with urban rainfall runoff so the chart always reflects local reality
+  // FIX FOR FLAT LINES: Blend flat river data with urban rainfall runoff
   var riverData = dates.map(function(d) { 
     var baseRiver = discMap[d] || 3000; 
     var localRain = rainMap[d] || 0;
-    // Visually multiply rain impact for urban zones to create dynamic graph spikes
     return baseRiver + (localRain * 120); 
   });
 
@@ -1320,7 +1319,7 @@ function drawInteractiveChart(loc) {
           pointRadius: 4,
           segment: {
             borderColor: function(ctx) {
-              return ctx.p0.parsed.y >= 5000 ? '#B23345' : '#1E6E7A'; // Turns red when dangerous
+              return ctx.p0.parsed.y >= 5000 ? '#B23345' : '#1E6E7A'; 
             }
           }
         },
@@ -1344,11 +1343,6 @@ function drawInteractiveChart(loc) {
       }
     }
   });
-}
-
-
-  // Start the live scrolling effect
-  startLiveChartUpdate(loc);
 }
 
 function renderPublicDangerChart(loc){
