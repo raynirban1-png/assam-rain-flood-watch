@@ -66,11 +66,14 @@ class LocalizationManager {
     const langBtn = document.getElementById('langToggleBtn');
     if(langBtn) langBtn.textContent = this.getText('langBtn');
 
-    // Note: Re-render your location cards here if you want dynamic descriptions to update instantly
+    if(window.renderAll) {
+      window.renderAll();
+    }
   }
 }
 
 const langManager = new LocalizationManager();
+window.langManager = langManager;
 
 /**
  * --- 2. DATA FETCHING: CWC Primary with GloFAS Fallback ---
