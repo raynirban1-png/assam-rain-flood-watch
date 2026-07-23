@@ -1131,83 +1131,114 @@ function dangerAssessment(loc, th){
 }
 
 /* ============ Chart ============ */
+/* ============ Interactive Chart.js Container ============ */
 function renderChart(loc){
-  var W=340, H=172, L=40, R=40, T=26, B=20;
-  var plotW = W-L-R, plotH = H-T-B;
-  var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
-  var dates = [], i;
-  for(i=-5; i<=5; i++) dates.push(shiftDate(anchor, i));
-
-  var rainMap = {}, discMap = {}, rainMax = 10, discMax = 1;
-  (loc.dailyRain || []).forEach(function(d){
-    rainMap[d.date] = d.mm;
-    if(d.mm > rainMax) rainMax = d.mm;
-  });
-  (loc.dischargeSeries || []).forEach(function(d){
-    if(d.v != null){
-      discMap[d.date] = d.v;
-      if(d.v > discMax) discMax = d.v;
-    }
-  });
-  rainMax *= 1.15;
-  discMax *= 1.15;
-
-  var step = plotW / dates.length;
-  function X(idx){ return L + (idx + 0.5) * step; }
-  function YR(v){ return T + plotH - (v / rainMax) * plotH; }
-  function YD(v){ return T + plotH - (v / discMax) * plotH; }
-
-  var s = '';
-  // forecast shading (right of today)
-  s += '<rect x="' + (L + 5.5*step).toFixed(1) + '" y="' + T + '" width="' + (plotW - 5.5*step).toFixed(1) + '" height="' + plotH + '" fill="rgba(30,110,122,0.06)"/>';
-  // gridlines + axes
-  for(i=0; i<=2; i++){
-    var gy = (T + plotH - i*(plotH/2)).toFixed(1);
-    s += '<line x1="' + L + '" y1="' + gy + '" x2="' + (L+plotW) + '" y2="' + gy + '" stroke="rgba(18,38,46,0.1)" stroke-width="1"/>';
-    s += '<text x="' + (L-4) + '" y="' + (+gy+3) + '" text-anchor="end" font-size="7.5" fill="#1E6E7A" font-family="JetBrains Mono">' + fmtCms(discMax*i/2) + '</text>';
-    s += '<text x="' + (L+plotW+4) + '" y="' + (+gy+3) + '" text-anchor="start" font-size="7.5" fill="#3F7FB5" font-family="JetBrains Mono">' + Math.round(rainMax*i/2) + '</text>';
-  }
-  // rain bars
-  var bw = step * 0.5;
-  dates.forEach(function(ds, idx){
-    var v = rainMap[ds];
-    if(v == null || v <= 0) return;
-    var future = idx > 5;
-    s += '<rect x="' + (X(idx)-bw/2).toFixed(1) + '" y="' + YR(v).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + (T+plotH-YR(v)).toFixed(1) + '" fill="#3F7FB5" opacity="' + (future?0.45:0.8) + '" rx="1"/>';
-  });
-  // discharge lines (solid past / dashed forecast)
-  var ptsPast = [], ptsFcst = [];
-  dates.forEach(function(ds, idx){
-    var v = discMap[ds];
-    if(v == null) return;
-    var p = X(idx).toFixed(1) + ',' + YD(v).toFixed(1);
-    if(idx <= 5) ptsPast.push(p);
-    if(idx >= 5) ptsFcst.push(p);
-  });
-  if(ptsPast.length) s += '<polyline points="' + ptsPast.join(' ') + '" fill="none" stroke="#1E6E7A" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
-  if(ptsFcst.length) s += '<polyline points="' + ptsFcst.join(' ') + '" fill="none" stroke="#1E6E7A" stroke-width="2" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>';
-  dates.forEach(function(ds, idx){
-    var v = discMap[ds];
-    if(v == null) return;
-    s += '<circle cx="' + X(idx).toFixed(1) + '" cy="' + YD(v).toFixed(1) + '" r="2" fill="#1E6E7A"/>';
-  });
-  // today marker
-  s += '<line x1="' + X(5).toFixed(1) + '" y1="' + T + '" x2="' + X(5).toFixed(1) + '" y2="' + (T+plotH) + '" stroke="rgba(18,38,46,0.35)" stroke-width="1" stroke-dasharray="3 3"/>';
-  // date labels
-  [0, 2, 5, 7, 10].forEach(function(idx){
-    var label = idx === 5 ? 'Today' : dateLabel(dates[idx]);
-    s += '<text x="' + X(idx).toFixed(1) + '" y="' + (T+plotH+13) + '" text-anchor="middle" font-size="7.5" fill="' + (idx===5 ? '#12262E' : '#4C6470') + '" font-weight="' + (idx===5 ? '600' : '400') + '" font-family="JetBrains Mono">' + label + '</text>';
-  });
-  // legend
-  s += '<line x1="' + L + '" y1="10" x2="' + (L+14) + '" y2="10" stroke="#1E6E7A" stroke-width="2"/>';
-  s += '<text x="' + (L+18) + '" y="13" font-size="8" fill="#12262E" font-family="JetBrains Mono">river m³/s (left)</text>';
-  s += '<rect x="' + (L+plotW-104) + '" y="5" width="8" height="8" fill="#3F7FB5" opacity="0.8" rx="1"/>';
-  s += '<text x="' + (L+plotW-92) + '" y="13" font-size="8" fill="#12262E" font-family="JetBrains Mono">rain mm/day (right)</text>';
-
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="River discharge versus rain chart">' + s + '</svg>';
+  return '<div class="chart-container" style="position: relative; height: 220px; width: 100%; margin-top: 10px;">' +
+         '<canvas id="floodCanvas_' + loc.id + '"></canvas>' +
+         '</div>';
 }
 
+/* ============ Chart.js Drawing Logic ============ */
+function drawInteractiveChart(loc) {
+  var canvasId = 'floodCanvas_' + loc.id;
+  var ctx = document.getElementById(canvasId);
+  if (!ctx) return; // If canvas isn't on screen, don't draw
 
+  // 1. Destroy existing chart if it exists to prevent overlapping
+  if (loc._chartInstance) {
+    loc._chartInstance.destroy();
+  }
+
+  // 2. Extract and format the data
+  var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
+  var dates = [];
+  var labels = [];
+  for(var i=-5; i<=5; i++) {
+    var d = shiftDate(anchor, i);
+    dates.push(d);
+    labels.push(i === 0 ? 'Today' : dateLabel(d)); // Label x-axis
+  }
+
+  var rainMap = {};
+  var discMap = {};
+  (loc.dailyRain || []).forEach(function(d){ rainMap[d.date] = d.mm; });
+  (loc.dischargeSeries || []).forEach(function(d){ if(d.v != null) discMap[d.date] = d.v; });
+
+  var rainData = dates.map(function(d) { return rainMap[d] || 0; });
+  var riverData = dates.map(function(d) { return discMap[d] || null; });
+  
+  // Dummy Dam Release Data (to be replaced by your actual Dam Data source later)
+  // We simulate a sudden spike on 'Today' + 1 day
+  var damData = dates.map(function(d, idx) { return idx === 6 ? 1200 : (idx === 7 ? 800 : null); });
+
+  // 3. Build the Chart
+  loc._chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'River Discharge (m³/s)',
+          data: riverData,
+          borderColor: '#1E6E7A',
+          backgroundColor: 'rgba(30, 110, 122, 0.1)',
+          yAxisID: 'yRiver',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3
+        },
+        {
+          label: 'Dam Release Alert (m³/s)',
+          data: damData,
+          borderColor: '#B23345',
+          borderDash: [5, 5], // Dashed line for sudden danger
+          yAxisID: 'yRiver',
+          fill: false,
+          tension: 0.1,
+          pointRadius: 4,
+          pointBackgroundColor: '#B23345'
+        },
+        {
+          label: 'Rainfall (mm)',
+          data: rainData,
+          type: 'bar',
+          backgroundColor: '#3F7FB5',
+          yAxisID: 'yRain',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false, // Show all data on hover
+      },
+      scales: {
+        yRiver: {
+          type: 'linear',
+          display: true,
+          position: 'left',
+          title: { display: true, text: 'Discharge (m³/s)', font: { size: 9 } }
+        },
+        yRain: {
+          type: 'linear',
+          display: true,
+          position: 'right',
+          title: { display: true, text: 'Rainfall (mm)', font: { size: 9 } },
+          grid: { drawOnChartArea: false } // Prevent gridlines from overlapping
+        }
+      },
+      plugins: {
+        legend: {
+          labels: { font: { size: 10, family: 'JetBrains Mono' } }
+        }
+      }
+    }
+  });
+}
+  
 function renderPublicDangerChart(loc){
   var a = publicRiskAnalysis(loc, state.thresholds), th = state.thresholds;
   var W=340, H=170, L=34, R=10, T=14, B=27, plotW=W-L-R, plotH=H-T-B;
@@ -1413,6 +1444,11 @@ function renderLocations(){
         '</div>' +
       '</div>' + body;
     wrap.appendChild(card);
+    if(isOpen && (loc.dischargeSeries || loc.dailyRain)) {
+      setTimeout(function() {
+        drawInteractiveChart(loc);
+      }, 50);
+    }
   });
 
   wrap.querySelectorAll('.loc-remove').forEach(function(btn){
