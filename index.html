@@ -522,6 +522,7 @@
   { id:'guwahati',  name:'Guwahati',  lat:26.14, lon:91.73 },
   { id:'sivasagar', name:'Sivasagar (Dikhow)', lat:26.98, lon:94.63 },
   { id:'nazira',    name:'Nazira (Disang)',    lat:26.9056, lon:94.7247 }
+  { id:'golaghat', name:'Golaghat (Dhansiri)', lat:26.52, lon:93.97, damReleaseAlert: true },  
 ];
   var DEFAULT_THRESHOLDS = { watch24:15, warning24:65, severe24:150, rateHeavy:15, rateExtreme:30, dischargeSurge:40 };
   var REFRESH_MS = 10 * 60 * 1000;        // weather + river data
@@ -719,21 +720,26 @@
   }
 
   function classify(loc, th){
-    var score = riskScore(loc.next24 == null ? 0 : loc.next24, th);
-    if(loc.rainNow != null){
-      if(loc.rainNow >= th.rateExtreme) score = Math.max(score, 85);
-      else if(loc.rainNow >= th.rateHeavy) score = Math.max(score, 60);
-    }
-    if(loc.peakRate != null){
-      if(loc.peakRate >= th.rateExtreme) score = Math.max(score, 85);
-      else if(loc.peakRate >= th.rateHeavy) score = Math.max(score, 60);
-    }
-    if(loc.dischargeTrend && loc.dischargeTrend.pctChange != null && loc.dischargeTrend.pctChange*100 >= th.dischargeSurge){
-      score = Math.min(100, score + 15);
-    }
-    score = Math.min(100, Math.max(0, score));
-    return { score: score, band: bandFromScore(score) };
+  // OVERRIDE: If a dam release alert is active for this location, force SEVERE.
+  if (loc.damReleaseAlert) {
+    return { score: 100, band: 'severe' };
   }
+
+  var score = riskScore(loc.next24 == null ? 0 : loc.next24, th);
+  if(loc.rainNow != null){
+    if(loc.rainNow >= th.rateExtreme) score = Math.max(score, 85);
+    else if(loc.rainNow >= th.rateHeavy) score = Math.max(score, 60);
+  }
+  if(loc.peakRate != null){
+    if(loc.peakRate >= th.rateExtreme) score = Math.max(score, 85);
+    else if(loc.peakRate >= th.rateHeavy) score = Math.max(score, 60);
+  }
+  if(loc.dischargeTrend && loc.dischargeTrend.pctChange != null && loc.dischargeTrend.pctChange*100 >= th.dischargeSurge){
+    score = Math.min(100, score + 15);
+  }
+  score = Math.min(100, Math.max(0, score));
+  return { score: score, band: bandFromScore(score) };
+}
 
   var BAND_RANK = { normal:0, watch:1, warning:2, severe:3 };
   var BAND_LABEL = { normal:'Normal', watch:'Watch', warning:'Warning', severe:'Severe' };
@@ -1083,6 +1089,18 @@ function publicRiskAnalysis(loc, th){
   if(coup && coup.perTenMm >= 1){
     why.push('recent local data shows roughly +' + (Math.round(coup.perTenMm*10)/10) + '% river rise per 10 mm of rain');
   }
+
+  // OVERRIDE FOR DAM RELEASE
+  if (loc.damReleaseAlert) {
+     riverScore = 100;
+     worst = 'severe';
+     riverLevel = 'severe';
+     headline = 'DANGEROUS: Sudden river surge expected due to upstream dam water release.';
+     why = ['upstream dam sluice gates have been opened (e.g., Doyang/Kurichu)'];
+     meaning = 'River levels will rise unnaturally fast regardless of local rainfall. Low-lying areas are at immediate risk.';
+     action = 'Evacuate riverbanks immediately. Follow ASDMA and district administration emergency protocols.';
+  }
+
   return {riverScore:riverScore,flashScore:flashScore,waterlogScore:waterlogScore,riverLevel:riverLevel,flashLevel:flashLevel,waterlogLevel:waterlogLevel,rainPressure:rainPressure,influenceLow:Math.max(20,Math.round(influence-8)),influenceHigh:Math.min(95,Math.round(influence+8)),coupling:coup,rainShare:rainShare,predictedRisePct:predictedRisePct,confidence:confidence,lagMin:lagMin,lagMax:lagMax,peakForecastRise:peakForecastRise,headline:headline,why:why,meaning:meaning,action:action,worst:worst};
 }
 function publicCardSummary(loc){
@@ -1139,24 +1157,23 @@ function renderChart(loc){
 }
 
 /* ============ Chart.js Drawing Logic ============ */
+/* ============ Chart.js Drawing Logic ============ */
 function drawInteractiveChart(loc) {
   var canvasId = 'floodCanvas_' + loc.id;
   var ctx = document.getElementById(canvasId);
-  if (!ctx) return; // If canvas isn't on screen, don't draw
+  if (!ctx) return; 
 
-  // 1. Destroy existing chart if it exists to prevent overlapping
   if (loc._chartInstance) {
     loc._chartInstance.destroy();
   }
 
-  // 2. Extract and format the data
   var anchor = loc.todayStr || new Date().toISOString().slice(0,10);
   var dates = [];
   var labels = [];
   for(var i=-5; i<=5; i++) {
     var d = shiftDate(anchor, i);
     dates.push(d);
-    labels.push(i === 0 ? 'Today' : dateLabel(d)); // Label x-axis
+    labels.push(i === 0 ? 'Today' : dateLabel(d)); 
   }
 
   var rainMap = {};
@@ -1167,53 +1184,63 @@ function drawInteractiveChart(loc) {
   var rainData = dates.map(function(d) { return rainMap[d] || 0; });
   var riverData = dates.map(function(d) { return discMap[d] || null; });
   
-  // Dummy Dam Release Data (to be replaced by your actual Dam Data source later)
-  // We simulate a sudden spike on 'Today' + 1 day
-  var damData = dates.map(function(d, idx) { return idx === 6 ? 1200 : (idx === 7 ? 800 : null); });
+  // ONLY draw the red dashed line if a Dam Release Alert is active for this location
+  var damData = [];
+  if (loc.damReleaseAlert) {
+    // Simulating a severe spike starting today due to dam gates opening
+    damData = dates.map(function(d, idx) { return idx >= 5 ? (1000 + (idx * 200)) : null; });
+  }
 
-  // 3. Build the Chart
+  var datasets = [
+    {
+      label: 'River Discharge (m³/s)',
+      data: riverData,
+      borderColor: '#1E6E7A',
+      backgroundColor: 'rgba(30, 110, 122, 0.1)',
+      yAxisID: 'yRiver',
+      fill: true,
+      tension: 0.3,
+      pointRadius: 4,
+      pointHoverRadius: 6
+    },
+    {
+      label: 'Rainfall (mm)',
+      data: rainData,
+      type: 'bar',
+      backgroundColor: '#3F7FB5',
+      yAxisID: 'yRain',
+      borderRadius: 4
+    }
+  ];
+
+  // Add the Dam dataset dynamically if active
+  if (loc.damReleaseAlert) {
+    datasets.push({
+      label: 'Dam Release Alert (m³/s)',
+      data: damData,
+      borderColor: '#B23345',
+      borderDash: [5, 5], 
+      yAxisID: 'yRiver',
+      fill: false,
+      tension: 0.1,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      pointBackgroundColor: '#B23345'
+    });
+  }
+
   loc._chartInstance = new Chart(ctx, {
     type: 'line',
     data: {
       labels: labels,
-      datasets: [
-        {
-          label: 'River Discharge (m³/s)',
-          data: riverData,
-          borderColor: '#1E6E7A',
-          backgroundColor: 'rgba(30, 110, 122, 0.1)',
-          yAxisID: 'yRiver',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 3
-        },
-        {
-          label: 'Dam Release Alert (m³/s)',
-          data: damData,
-          borderColor: '#B23345',
-          borderDash: [5, 5], // Dashed line for sudden danger
-          yAxisID: 'yRiver',
-          fill: false,
-          tension: 0.1,
-          pointRadius: 4,
-          pointBackgroundColor: '#B23345'
-        },
-        {
-          label: 'Rainfall (mm)',
-          data: rainData,
-          type: 'bar',
-          backgroundColor: '#3F7FB5',
-          yAxisID: 'yRain',
-          borderRadius: 4
-        }
-      ]
+      datasets: datasets
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       interaction: {
         mode: 'index',
-        intersect: false, // Show all data on hover
+        intersect: false, 
       },
       scales: {
         yRiver: {
@@ -1227,7 +1254,7 @@ function drawInteractiveChart(loc) {
           display: true,
           position: 'right',
           title: { display: true, text: 'Rainfall (mm)', font: { size: 9 } },
-          grid: { drawOnChartArea: false } // Prevent gridlines from overlapping
+          grid: { drawOnChartArea: false } 
         }
       },
       plugins: {
@@ -1377,13 +1404,16 @@ function renderDetail(loc){
   h+='<div class="public-summary"><h3>'+a.headline+'</h3><p>'+a.why.join('; ')+'.</p><div class="impact-time">Possible local/river response: about '+a.lagMin+'–'+a.lagMax+' hours after the strongest rainfall</div></div>';
   h+='<div class="risk-trio"><div class="risk-box '+a.riverLevel+'"><span class="risk-name">River flood</span><span class="risk-level">'+levelWord(a.riverLevel)+'</span></div><div class="risk-box '+a.flashLevel+'"><span class="risk-name">Sudden / flash flood</span><span class="risk-level">'+levelWord(a.flashLevel)+'</span></div><div class="risk-box '+a.waterlogLevel+'"><span class="risk-name">Local waterlogging</span><span class="risk-level">'+levelWord(a.waterlogLevel)+'</span></div></div>';
   h+='<div class="cause-flow"><div class="cause-stage"><strong>Rain pressure</strong><span>'+Math.round(a.rainPressure)+'/100 · '+fmt1(loc.next24)+' mm forecast</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>River response</strong><span>'+(a.peakForecastRise?(a.peakForecastRise>=0?'+':'')+Math.round(a.peakForecastRise)+'% forecast peak':'model trend limited')+'</span></div><div class="cause-arrow">→</div><div class="cause-stage"><strong>Local impact</strong><span>'+levelWord(a.worst)+' combined concern</span></div></div>';
-  h+=renderPublicDangerChart(loc);
+  
+  // FIXED: Inject the Chart.js canvas instead of the old static SVG!
+  h+=renderChart(loc); 
+  
   h+='<div class="indicator-list"><div class="indicator"><span class="iv">'+Math.round(a.rainPressure)+'/100</span><span class="il">Upstream/local rain pressure proxy</span></div><div class="indicator"><span class="iv">'+(a.rainShare!=null?'~'+a.rainShare:a.influenceLow+'–'+a.influenceHigh)+'%</span><span class="il">'+(a.rainShare!=null?'Share of forecast river rise explained by rain (recent local data)':'Estimated rainfall influence (model heuristic)')+'</span></div><div class="indicator"><span class="iv">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="il">River vs recent 7-day average</span></div><div class="indicator"><span class="iv">'+a.confidence+'</span><span class="il">Model interpretation confidence</span></div></div>';
   h+='<div class="plain-panel"><strong>What this means</strong><br>'+a.meaning+'</div><div class="plain-panel action"><strong>What to do now</strong><br>'+a.action+'</div>';
-  h+='<details class="expert-details"><summary>View scientific data and original graph</summary><div class="detail-grid" style="margin-top:9px"><div class="detail-cell"><span class="v">'+(dt?fmtCms(dt.today):'—')+'</span><span class="l">river now · m³/s</span></div><div class="detail-cell"><span class="v">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="l">vs 7-day river avg</span></div><div class="detail-cell"><span class="v">'+(loc.peakFcstDisc?fmtCms(loc.peakFcstDisc.v)+' <small>'+dateLabel(loc.peakFcstDisc.date)+'</small>':'—')+'</span><span class="l">peak fcst river · m³/s</span></div><div class="detail-cell"><span class="v">'+(loc.peakRate!=null?fmt1(loc.peakRate)+' <small>'+(loc.peakRateTime||'')+'</small>':'—')+'</span><span class="l">max rain rate · mm/h 24h</span></div></div>';
-  if((loc.dischargeSeries&&loc.dischargeSeries.length)||(loc.dailyRain&&loc.dailyRain.length)){h+='<div class="chart-wrap">'+renderChart(loc)+'<div class="chart-cap">Dashed = model forecast · river line versus daily rain, five days back to five days ahead</div></div>';}
-  h+='<div class="model-note">The rainfall-influence percentage is an explainable model estimate, not a direct conversion of rain into river discharge. Actual response also depends on catchment rainfall, soil saturation, tributaries, terrain, drainage and river travel time. Official CWC/ASDMA thresholds take priority.</div></details>';
+  h+='<details class="expert-details"><summary>View scientific data</summary><div class="detail-grid" style="margin-top:9px"><div class="detail-cell"><span class="v">'+(dt?fmtCms(dt.today):'—')+'</span><span class="l">river now · m³/s</span></div><div class="detail-cell"><span class="v">'+(dt?(dt.pctChange>=0?'+':'')+Math.round(dt.pctChange*100)+'%':'—')+'</span><span class="l">vs 7-day river avg</span></div><div class="detail-cell"><span class="v">'+(loc.peakFcstDisc?fmtCms(loc.peakFcstDisc.v)+' <small>'+dateLabel(loc.peakFcstDisc.date)+'</small>':'—')+'</span><span class="l">peak fcst river · m³/s</span></div><div class="detail-cell"><span class="v">'+(loc.peakRate!=null?fmt1(loc.peakRate)+' <small>'+(loc.peakRateTime||'')+'</small>':'—')+'</span><span class="l">max rain rate · mm/h 24h</span></div></div>';
+  h+='<div class="model-note">The rainfall-influence percentage is an explainable model estimate, not a direct conversion of rain into river discharge. Official CWC/ASDMA thresholds take priority.</div></details>';
   h+='<div class="detail-actions"><button class="locate-btn" data-locate="'+loc.id+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>show on map</button><span class="loc-updated">'+(loc._updated?'updated '+fmtTime(loc._updated):'')+(loc._cached?' · saved copy':'')+'</span></div></div>';
+  
   return h;
 }
 
